@@ -207,10 +207,16 @@ _get_zen_root() {
     return
   fi
   local self_dir
-  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || true)"
-  if [[ -n "$self_dir" && -d "$self_dir/.." && -f "$self_dir/../install.sh" ]]; then
-    (cd "$self_dir/.." && pwd)
-    return
+  if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    local src_dir
+    src_dir="$(dirname "${BASH_SOURCE[0]}" 2>/dev/null || true)"
+    if [[ -n "$src_dir" && -d "$src_dir" ]]; then
+      self_dir="$(cd "$src_dir" 2>/dev/null && pwd 2>/dev/null || true)"
+      if [[ -n "$self_dir" && -d "$self_dir/.." && -f "$self_dir/../install.sh" ]]; then
+        (cd "$self_dir/.." 2>/dev/null && pwd 2>/dev/null)
+        return
+      fi
+    fi
   fi
   local xdg_zencli="${XDG_CONFIG_HOME:-$HOME/.config}/zencli"
   if [[ -d "$xdg_zencli" ]]; then
@@ -505,7 +511,16 @@ EOF
   if (( ${#mig_hooks[@]} > 0 )); then
     for rc in "${mig_hooks[@]}"; do
       if [[ -f "$rc" ]]; then
-        sed -E "s|ZEN=\"[^\"]*/\.config/(zen|dotfiles)\"|ZEN=\"$dest_config\"|g; s|DOTFILES=\"[^\"]*/\.config/(zen|dotfiles)\"|DOTFILES=\"$dest_config\"|g; s|\"\\\$HOME/\.config/(zen|dotfiles)\"|\"$dest_config\"|g; s|# Load (Zen|dotfiles)|# Load ZenCLI|g" "$rc" > "$rc.tmp" && mv "$rc.tmp" "$rc"
+        sed -E \
+          -e "s#ZEN=\"[^\"]*/\.config/(zen|dotfiles)\"#ZENCLI=\"$dest_config\"#g" \
+          -e "s#DOTFILES=\"[^\"]*/\.config/(zen|dotfiles)\"#ZENCLI=\"$dest_config\"#g" \
+          -e "s#ZENCLI=\"[^\"]*/\.config/(zen|dotfiles)\"#ZENCLI=\"$dest_config\"#g" \
+          -e "s#\"\\\$ZEN\"#\"\\\$ZENCLI\"#g" \
+          -e "s#\"\\\$ZEN/#\"\\\$ZENCLI/#g" \
+          -e "s#unset _f (DOTFILES|ZEN|ZENCLI)\b#unset _f ZENCLI#g" \
+          -e "s#\"\\\$HOME/\.config/(zen|dotfiles)\"#\"$dest_config\"#g" \
+          -e "s#\# Load (Zen|dotfiles|ZenCLI)#\# Load ZenCLI#g" \
+          "$rc" > "$rc.tmp" && mv "$rc.tmp" "$rc"
         log_msg "  ✔ Updated shell profile hook in $rc to point to $dest_config"
       fi
     done

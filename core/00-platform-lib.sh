@@ -208,7 +208,13 @@ zen() {
   local dotfiles_root="$(_get_dotfiles_root)"
 
   case "$subcmd" in
-    ""|tui)
+    "")
+      _zen_version
+      echo
+      _zen_help
+      ;;
+
+    tui)
       local installer="$dotfiles_root/scripts/install-tools.sh"
       if [[ -f "$installer" ]]; then
         bash "$installer"
@@ -331,6 +337,10 @@ zen() {
         echo "Error: Developer tools notebook installer not found at $installer" >&2
         return 1
       fi
+      ;;
+
+    -v|--version|version|ver)
+      _zen_version
       ;;
 
     -h|--help|help)
@@ -751,6 +761,57 @@ _zen_package_action() {
   esac
 }
 
+_zen_version() {
+  local dotfiles_root="$(_get_dotfiles_root)"
+  local ver="v1.2.0"
+  local commit_sha="-"
+  local commit_date="-"
+  if command -v git >/dev/null 2>&1 && [[ -d "$dotfiles_root/.git" ]]; then
+    commit_sha="$(git -C "$dotfiles_root" rev-parse --short HEAD 2>/dev/null || echo "-")"
+    commit_date="$(git -C "$dotfiles_root" log -1 --format="%cd" --date=short 2>/dev/null || echo "-")"
+  fi
+
+  local distro="Linux"
+  if [[ -f /etc/os-release ]]; then
+    distro="$(grep -E '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '"' || echo "Linux")"
+  elif is_darwin; then
+    distro="macOS $(sw_vers -productVersion 2>/dev/null || echo "")"
+  fi
+
+  local plat="Native POSIX"
+  if is_wsl; then
+    plat="WSL"
+  elif is_msys; then
+    plat="MSYS/Windows"
+  elif is_darwin; then
+    plat="macOS"
+  fi
+
+  if [[ -z "${TZ:-}" && -r "$dotfiles_root/local/local.env" ]]; then
+    # shellcheck disable=SC1090
+    . "$dotfiles_root/local/local.env"
+  fi
+
+  local tz_id="${TZ:-}"
+  if [[ -z "$tz_id" && -f /etc/timezone ]]; then
+    tz_id="$(head -n 1 /etc/timezone | tr -d "[:space:]")"
+  fi
+  if [[ -z "$tz_id" && -L /etc/localtime ]]; then
+    tz_id="$(readlink /etc/localtime | sed -E "s|.*/zoneinfo/||")"
+  fi
+  local tz_abbr
+  tz_abbr="$(date +"%Z" 2>/dev/null || echo "UTC")"
+  local tz_offset
+  tz_offset="$(date +"%:z" 2>/dev/null || echo "+00:00")"
+  tz_id="${tz_id:-System ($tz_abbr)}"
+
+  printf "ZenCLI %s\n" "$ver"
+  printf "Commit     : %s (%s)\n" "$commit_sha" "$commit_date"
+  printf "Root       : %s\n" "$dotfiles_root"
+  printf "Platform   : %s [%s]\n" "$distro" "$plat"
+  printf "Timezone   : %s (%s, UTC%s)\n" "$tz_id" "$tz_abbr" "$tz_offset"
+}
+
 _zen_help() {
   local mgr=""
   if command -v brew &>/dev/null; then
@@ -773,8 +834,12 @@ ZenCLI - Unified Ecosystem Gateway & Developer Tool Orchestrator
 Usage:
   zen [subcommand] [arguments...]
 
+Core & Help:
+  zen                      Show version summary and quick command helper
+  zen -v, --version        Show version and environment details
+  zen -h, --help           Show this help message
+
 TUI & Tools Notebook:
-  zen                      Launch interactive Developer Tools Notebook TUI (zen tui)
   zen tui                  Launch interactive Developer Tools Notebook TUI
 
 Headless Package Management:

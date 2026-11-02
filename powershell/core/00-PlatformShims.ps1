@@ -434,16 +434,48 @@ function _zen_cmd_skiv {
     }
 }
 
+function _zen_version_ps {
+    $root = if ($env:DOTFILES) { $env:DOTFILES } else { (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) }
+    $commitSha = "-"
+    $commitDate = "-"
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $cSha = git -C $root rev-parse --short HEAD 2>$null
+        if ($cSha) { $commitSha = $cSha }
+        $cDate = git -C $root log -1 --format="%cd" --date=short 2>$null
+        if ($cDate) { $commitDate = $cDate }
+    }
+    $osDesc = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+    $tz = [System.TimeZoneInfo]::Local
+    $offset = $tz.GetUtcOffset([DateTime]::UtcNow)
+    $sign = if ($offset.Hours -ge 0) { "+" } else { "-" }
+    $offsetStr = "{0}{1:D2}:{2:D2}" -f $sign, [Math]::Abs($offset.Hours), [Math]::Abs($offset.Minutes)
+
+    Write-Host "ZenCLI v1.2.0"
+    Write-Host "Commit     : $commitSha ($commitDate)"
+    Write-Host "Root       : $root"
+    Write-Host "Platform   : $osDesc [Windows]"
+    Write-Host "Timezone   : $($tz.Id) ($($tz.StandardName), UTC$offsetStr)"
+}
+
 # Universal Package Manager & Ecosystem shim
 function zen {
     param(
         [Parameter(Position = 0)]
-        [string]$Action = "help",
+        [string]$Action = "",
         [Parameter(ValueFromRemainingArguments = $true)]
         [string[]]$RemainingArgs
     )
 
     switch ($Action) {
+        { $_ -in "-v", "--version", "version", "ver" } {
+            _zen_version_ps
+            return
+        }
+        "" {
+            _zen_version_ps
+            Write-Host ""
+            # Fall through to default help display
+        }
         "ski" {
             _zen_cmd_ski -RemainingArgs $RemainingArgs
             return
@@ -567,6 +599,11 @@ Usage:
 ZenCLI - Unified Ecosystem Gateway & Developer Tool Orchestrator
 
 Usage: zen <command> [arguments...]
+
+Core & Help:
+  zen                    Show version summary and quick command helper
+  zen -v, --version      Show version and environment details
+  zen -h, --help         Show this help message
 
 Headless Package Management:
   zen i <package...>     Install a package (shorthand for zen install)

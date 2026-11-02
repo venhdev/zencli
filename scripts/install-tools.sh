@@ -478,7 +478,7 @@ if (( OPT_ALL )); then
     echo
     echo "Notice: The following tools are not available in current APT repositories: ${missing_gh[*]}"
     echo "To install upstream binaries into ~/.local/bin safely with explicit review, launch the notebook:"
-    echo "  zen (or ./scripts/install-tools.sh)"
+    echo "  zen tui (or ./scripts/install-tools.sh)"
   fi
 
   echo

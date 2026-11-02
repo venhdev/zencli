@@ -179,7 +179,7 @@ _tui_read_key() {
     eval "$_out_var='UPDATE'"
   elif [[ "$key" == "d" || "$key" == "D" ]]; then
     eval "$_out_var='DELETE'"
-  elif [[ "$key" == "?" || "$key" == "o" || "$key" == "O" ]]; then
+  elif [[ "$key" == "?" || "$key" == "o" || "$key" == "O" || "$key" == "h" || "$key" == "H" ]]; then
     eval "$_out_var='INFO'"
   elif [[ "$key" == "q" || "$key" == "Q" || "$key" == $'\x03' || "$key" == $'\x04' ]]; then
     eval "$_out_var='QUIT'"
@@ -210,7 +210,7 @@ _tui_draw_header() {
 
 # Render Standard Footer with dynamic width
 _tui_draw_footer() {
-  local help_text="$1"
+  local help_text="${1:-}"
   _tui_update_dimensions
   local width="${_TUI_COLS:-80}"
   (( width > 80 )) && width=80
@@ -219,13 +219,14 @@ _tui_draw_footer() {
   divider="$(_tui_repeat_char "─" "$width")"
 
   printf "\n${_TUI_GRAY}%s${_TUI_RESET}\n" "$divider" >/dev/tty
-  if (( width < 52 )); then
-    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[↑/↓] Move [Space] Select [i] Install" >/dev/tty
-    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[u] Update [d] Remove [q] Quit" >/dev/tty
-  elif (( ${#help_text} > width )); then
-    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "$(_tui_truncate "$help_text" "$width")" >/dev/tty
-  else
+  if [[ -n "$help_text" && ${#help_text} -le width ]]; then
     printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "$help_text" >/dev/tty
+  elif (( width >= 72 )); then
+    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[↑/↓] Move  [Space] Select  [i] Install  [u] Update  [d] Remove  [?] Help  [q] Quit" >/dev/tty
+  elif (( width >= 54 )); then
+    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[↑/↓] Move  [Space] Select  [i] Install  [?] Help  [q] Quit" >/dev/tty
+  else
+    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[↑/↓] Move  [Space] Select  [?] Help  [q] Quit" >/dev/tty
   fi
 }
 

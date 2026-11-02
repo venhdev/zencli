@@ -735,8 +735,30 @@ _action_delete() {
   _tui_enter
 }
 
-# ==============================================================================
-# LIVE DETAIL PREVIEW PANE (Updates dynamically as cursor scrolls)
+# Dedicated Interactive Help Dialog
+_action_show_help() {
+  local help_lines=(
+    "ZENCLI DEVELOPER TOOLS NOTEBOOK"
+    ""
+    "Navigation:"
+    "  ↑/↓, k/j   Navigate tools"
+    ""
+    "Selection:"
+    "  Space      Toggle selection"
+    "  a          Select / deselect all"
+    ""
+    "Actions:"
+    "  i, Enter   Install selected (or focused)"
+    "  u          Update selected to latest"
+    "  d          Remove / uninstall tool"
+    ""
+    "General:"
+    "  ?, h       Show this help dialog"
+    "  q, Esc     Quit notebook"
+  )
+  _tui_modal_box "HELP & SHORTCUTS" help_lines
+}
+
 # ==============================================================================
 # MASTER-DETAIL LIVE PREVIEW PANE (Responsive & Zero-Fork)
 # ==============================================================================
@@ -882,7 +904,7 @@ while true; do
   # Render Live Master-Detail Preview Pane for Currently Focused Tool
   _render_live_detail "$cursor"
 
-  _tui_draw_footer "[↑/↓, k/j] Navigate  [Space] Toggle  [a] Toggle All  [i/Enter] Install  [u] Update  [d] Remove  [q/Esc] Quit"
+  _tui_draw_footer
 
   action=""
   _tui_read_key action
@@ -922,7 +944,7 @@ while true; do
       _refresh_inventory
       ;;
     INFO)
-      # In live-detail mode, info key is a convenient no-op or refresh
+      _action_show_help
       ;;
     QUIT|ESC)
       break

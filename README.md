@@ -302,8 +302,8 @@ open_target https://github.com    # Open URL in default browser
 Unified command gateway and workstation orchestrator managing system packages, developer tools, ecosystem diagnostics, and shortcut catalogs:
 
 ```bash
-# 1. Interactive Developer Tools Notebook TUI (zen or zen tui)
-zen
+# 1. Interactive Developer Tools TUI (zen tui)
+zen tui
 
 # 2. Headless Developer Tool Provisioning
 zen i --all                 # Batch install missing managed tools (git, curl, jq, rg, lazygit)
@@ -498,7 +498,7 @@ dotfiles/
 │   ├── docker/module.sh             # Docker & Compose shortcuts (dps, dpsa, dcl)
 │   └── ai/module.sh                 # AI agent CLI helpers (Claude, Skills CLI, OpenClaw)
 ├── scripts/
-│   └── install-tools.sh             # Developer Tools Notebook Manager TUI (zen)
+│   └── install-tools.sh             # Developer Tools Manager TUI (zen tui)
 ├── enabled.d/                       # Symlinks to active modules (git-ignored)
 └── local/                           # Machine-specific overrides (git-ignored)
     ├── local.env                    # Local environment variables for POSIX

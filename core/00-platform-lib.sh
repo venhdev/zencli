@@ -219,7 +219,7 @@ zen() {
       if [[ -f "$installer" ]]; then
         bash "$installer"
       else
-        echo "Error: Developer tools notebook installer not found at $installer" >&2
+        echo "Error: Developer tools installer not found at $installer" >&2
         return 1
       fi
       ;;
@@ -334,7 +334,7 @@ zen() {
       if [[ -f "$installer" ]]; then
         bash "$installer" --all
       else
-        echo "Error: Developer tools notebook installer not found at $installer" >&2
+        echo "Error: Developer tools installer not found at $installer" >&2
         return 1
       fi
       ;;
@@ -839,8 +839,8 @@ Core & Help:
   zen -v, --version        Show version and environment details
   zen -h, --help           Show this help message
 
-TUI & Tools Notebook:
-  zen tui                  Launch interactive Developer Tools Notebook TUI
+Developer Tools TUI:
+  zen tui                  Launch interactive Developer Tools TUI
 
 Headless Package Management:
   zen i <pkg...>           Install system package(s) or managed tool(s)

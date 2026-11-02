@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# scripts/install-tools.sh - Zen Developer Tools Notebook Manager
+# scripts/install-tools.sh - Zen Developer Tools Manager
 # ==============================================================================
-# Interactive TUI notebook to inventory, install, update, remove, and audit
+# Interactive TUI manager to inventory, install, update, remove, and audit
 # developer CLI tools across APT and upstream GitHub releases.
 # ==============================================================================
 set -e
@@ -39,10 +39,10 @@ if is_darwin; then
 fi
 
 # ==============================================================================
-# DECLARATIVE TOOL NOTEBOOK REGISTRY
+# DECLARATIVE TOOL REGISTRY
 # format: cmd|apt_pkg|gh_repo|asset_template|bin_in_archive|desc|homepage
 # ==============================================================================
-TOOL_NOTEBOOK=(
+TOOL_REGISTRY=(
   "git|git||||Fast, distributed version control system|https://git-scm.com"
   "curl|curl||||CLI tool for transferring data with URLs|https://curl.se"
   "jq|jq||||Command-line JSON processor|https://jqlang.github.io/jq/"
@@ -65,7 +65,7 @@ for arg in "$@"; do
       echo "  -h, --help            Show this help message"
       echo
       echo "Interactive mode:"
-      echo "  Run without arguments to launch the Zen Tools Notebook TUI."
+      echo "  Run without arguments to launch the Zen Developer Tools TUI."
       exit 0
       ;;
   esac
@@ -333,7 +333,7 @@ if cmd in tools:
 }
 
 # Dynamic Ledger In-memory State
-item_count=${#TOOL_NOTEBOOK[@]}
+item_count=${#TOOL_REGISTRY[@]}
 cmds=()
 apt_pkgs=()
 gh_repos=()
@@ -369,7 +369,7 @@ _refresh_inventory() {
   local origin_info origin_label path_val origin_type ver_str cand_str
 
   for ((i=0; i<item_count; i++)); do
-    def="${TOOL_NOTEBOOK[i]}"
+    def="${TOOL_REGISTRY[i]}"
     IFS='|' read -r cmd apt_pkg gh_repo asset_fmt bin_name desc homepage <<< "$def"
     cmds+=("$cmd")
     apt_pkgs+=("$apt_pkg")
@@ -477,7 +477,7 @@ if (( OPT_ALL )); then
   if (( ${#missing_gh[@]} > 0 )); then
     echo
     echo "Notice: The following tools are not available in current APT repositories: ${missing_gh[*]}"
-    echo "To install upstream binaries into ~/.local/bin safely with explicit review, launch the notebook:"
+    echo "To install upstream binaries into ~/.local/bin safely with explicit review, launch the TUI:"
     echo "  zen tui (or ./scripts/install-tools.sh)"
   fi
 
@@ -733,7 +733,7 @@ _action_review_and_execute() {
     printf "\n${_TUI_CYAN}==> Pre-authenticating sudo credentials for APT operations...${_TUI_RESET}\n"
     if ! sudo -v; then
       printf "${_TUI_RED}Error: Sudo authentication failed. Transaction aborted.${_TUI_RESET}\n"
-      printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
+      printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools...${_TUI_RESET}"
       read -r _ </dev/tty || true
       _tui_enter
       return 1
@@ -784,7 +784,7 @@ _action_review_and_execute() {
   done
 
   printf "\n${_TUI_GREEN}${_TUI_BOLD}✔ Transaction applied successfully.${_TUI_RESET}\n"
-  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
+  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools...${_TUI_RESET}"
   read -r _ </dev/tty || true
   _refresh_inventory
   _tui_enter
@@ -793,7 +793,7 @@ _action_review_and_execute() {
 # Dedicated Interactive Help Dialog
 _action_show_help() {
   local help_lines=(
-    "ZENCLI DEVELOPER TOOLS NOTEBOOK"
+    "ZENCLI DEVELOPER TOOLS"
     ""
     "Staging & Queue Keybindings:"
     "  i, +       Stage tool for INSTALL  [+]"
@@ -813,7 +813,7 @@ _action_show_help() {
     "Navigation & General:"
     "  ↑/↓, k/j   Navigate tools catalog"
     "  ?, h       Show this help dialog"
-    "  q, Esc     Quit notebook"
+    "  q, Esc     Quit"
   )
   _tui_modal_box "HELP & SHORTCUTS" help_lines
 }
@@ -924,7 +924,7 @@ _main_tui_loop() {
   _tui_update_dimensions
   cols="${_TUI_COLS:-80}"
 
-  _tui_draw_header "ZENCLI: DEVELOPER TOOLS NOTEBOOK" "Developer Tool Ledger & Provisioning Manager"
+  _tui_draw_header "ZENCLI: DEVELOPER TOOLS" "Developer Tool Ledger & Provisioning Manager"
 
   # Responsive Table Columns based on available width
   if (( cols >= 85 )); then
@@ -1107,7 +1107,7 @@ _main_tui_loop() {
 done
 
   _tui_exit
-  printf "\nClosed ZenCLI Tools Notebook.\n"
+  printf "\nClosed ZenCLI Developer Tools.\n"
 }
 
 _main_tui_loop

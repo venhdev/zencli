@@ -834,13 +834,13 @@ while true; do
   # Responsive Table Columns based on available width
   if (( cols >= 85 )); then
     printf "      %-10s %-13s %-10s %-15s %s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" "DESCRIPTION" >/dev/tty
-    printf "      %-10s %-13s %-10s %-15s %s\n" "───────" "──────" "───────" "──────" "───────────" >/dev/tty
+    printf "      ───────    ───────────── ───────    ──────         ───────────\n" >/dev/tty
   elif (( cols >= 62 )); then
     printf "      %-10s %-13s %-10s %-15s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" >/dev/tty
-    printf "      %-10s %-13s %-10s %-15s\n" "───────" "──────" "───────" "──────" >/dev/tty
+    printf "      ───────    ───────────── ───────    ──────\n" >/dev/tty
   else
-    printf "      %-8s %-11s %-8s\n" "COMMAND" "STATUS" "VER" >/dev/tty
-    printf "      %-8s %-11s %-8s\n" "───────" "──────" "───" >/dev/tty
+    printf "      %-8s %-6s %-8s\n" "COMMAND" "STATUS" "VER" >/dev/tty
+    printf "      ───────  ────── ───\n" >/dev/tty
   fi
 
   # Render Rows
@@ -850,10 +850,10 @@ while true; do
 
     if (( statuses[i] )); then
       status_disp="${_TUI_GREEN}Installed    ${_TUI_RESET}"
-      status_short="${_TUI_GREEN}Inst ${_TUI_RESET}"
+      status_short="${_TUI_GREEN}Inst  ${_TUI_RESET}"
     else
       status_disp="${_TUI_GRAY}Not Installed${_TUI_RESET}"
-      status_short="${_TUI_GRAY}None ${_TUI_RESET}"
+      status_short="${_TUI_GRAY}None  ${_TUI_RESET}"
     fi
 
     ver_disp="${versions[i]}"

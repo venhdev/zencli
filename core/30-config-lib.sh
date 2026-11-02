@@ -1,34 +1,41 @@
 # Config helpers
 
 conf() {
-  local dotfiles="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
+  local zen_root
+  if declare -F _get_zen_root >/dev/null 2>&1; then
+    zen_root="$(_get_zen_root)"
+  elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
+    zen_root="$(_get_dotfiles_root)"
+  else
+    zen_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
+  fi
 
   local -A m=(
     [bashrc]="$HOME/.bashrc"
     [zshrc]="${ZDOTDIR:-$HOME}/.zshrc"
-    [platform]="$dotfiles/core/00-platform-lib.sh"
-    [ali]="$dotfiles/core/10-base-aliases.sh"
-    [localenv]="$dotfiles/local/local.env"
+    [platform]="$zen_root/core/00-platform-lib.sh"
+    [ali]="$zen_root/core/10-base-aliases.sh"
+    [localenv]="$zen_root/local/local.env"
     [ssh]="$HOME/.ssh/config"
     [env]="$HOME/.env"
     [profile]="/etc/profile"
-    [pwprofile]="$dotfiles/powershell/profile.ps1"
+    [pwprofile]="$zen_root/powershell/profile.ps1"
     [git]="$HOME/.gitconfig"
-    [gitdot]="$dotfiles/.gitconfig"
+    [gitdot]="$zen_root/.gitconfig"
     [claude]="$HOME/.claude/settings.json"
     [codex]="$HOME/.codex/config.toml"
     [docker]="$HOME/.docker/config.json"
     [oc]="$HOME/.openclaw/openclaw.json"
     [opencode]="$HOME/.config/opencode/opencode.json"
-    [cmdlog]="$dotfiles/core/15-cmdlog-lib.sh"
-    [clog]="$dotfiles/core/15-cmdlog-lib.sh"
+    [cmdlog]="$zen_root/core/15-cmdlog-lib.sh"
+    [clog]="$zen_root/core/15-cmdlog-lib.sh"
   )
 
   local f k="${1:-}" x l
   k="${k#conf }"
   k="${k# }"
 
-  for f in "$dotfiles"/core/*.sh "$dotfiles"/modules/*/*.sh "$HOME"/bin/*.sh; do
+  for f in "$zen_root"/core/*.sh "$zen_root"/modules/*/*.sh "$HOME"/bin/*.sh; do
     [[ -e $f ]] && m[$(basename "$f" .sh)]="$f"
   done
 

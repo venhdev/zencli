@@ -3,7 +3,7 @@
 # core/12-alias-catalog-lib.sh - Zen Alias & Shortcut Catalog Engine
 # ==============================================================================
 # Discovers, categorizes, formats, and searches all active shell aliases,
-# Git configuration shortcuts, and dotfiles ecosystem utilities in the current OS.
+# Git configuration shortcuts, and ZenCLI ecosystem utilities in the current OS.
 # ==============================================================================
 
 _zen_alias_catalog() {
@@ -11,11 +11,12 @@ _zen_alias_catalog() {
   [[ "$query" == "list" || "$query" == "all" ]] && query=""
 
   local dotfiles_root
-  if declare -F _get_dotfiles_root >/dev/null 2>&1; then
+  if declare -F _get_zen_root >/dev/null 2>&1; then
+    dotfiles_root="$(_get_zen_root)"
+  elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
     dotfiles_root="$(_get_dotfiles_root)"
   else
-    dotfiles_root="${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}"
-    [[ -d "$dotfiles_root" ]] || dotfiles_root="${DOTFILES:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles}}"
+    dotfiles_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
   fi
 
   local files=()
@@ -214,7 +215,7 @@ _zen_alias_catalog() {
     utils[++n_u] = "zen doctor" SEP "system diagnostics" SEP "Authoritative inspection & ecosystem audit";
     utils[++n_u] = "zen sync" SEP "git pull & alias reload" SEP "Pull latest commits & refresh shell aliases";
     utils[++n_u] = "zen ali" SEP "alias catalog" SEP "Browse and search all shell & git shortcuts";
-    utils[++n_u] = "zen setup" SEP "modular installer" SEP "Run dotfiles installation & setup wizard";
+    utils[++n_u] = "zen setup" SEP "modular installer" SEP "Run ZenCLI installation & setup wizard";
     utils[++n_u] = "zen ski" SEP "npx skills [action]" SEP "Agent skills orchestrator (Vercel Skills CLI)";
     utils[++n_u] = "zen skiv" SEP "zen ski venhdev/skills" SEP "Personal skills (auto-targets .agents/skills)";
     utils[++n_u] = "zen skiup" SEP "zen ski update -p -y" SEP "Update all project skills according to lockfile";

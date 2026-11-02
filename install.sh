@@ -4,6 +4,8 @@ set -e
 REPO="https://github.com/venhdev/zen.git"
 DIR="${ZEN_DIR:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}"
 LEGACY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
+LEGACY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+TARGET_STATE_DIR="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
 
 # Load SSOT platform detection library if present, or provide minimal bootstrap fallbacks
 if [[ -f "$DIR/core/00-platform-lib.sh" ]]; then
@@ -322,6 +324,10 @@ if (( OPT_CLEAN )); then
     echo "==> Cleaning legacy dotfiles directory at $LEGACY_DIR..."
     rm -rf "$LEGACY_DIR"
   fi
+  if [[ -d "$LEGACY_STATE_DIR" ]]; then
+    echo "==> Cleaning legacy state directory at $LEGACY_STATE_DIR..."
+    rm -rf "$LEGACY_STATE_DIR"
+  fi
 elif [[ -d "$LEGACY_DIR" && "$DIR" != "$LEGACY_DIR" ]]; then
   echo "==> Migrating legacy installation from $LEGACY_DIR to $DIR..."
   if [[ ! -d "$DIR" ]]; then
@@ -333,6 +339,20 @@ elif [[ -d "$LEGACY_DIR" && "$DIR" != "$LEGACY_DIR" ]]; then
     rm -rf "$LEGACY_DIR"
   fi
   echo "✔ Successfully migrated to $DIR and cleaned up $LEGACY_DIR"
+fi
+
+# Always migrate legacy state directory (~/.local/state/dotfiles -> ~/.local/state/zen)
+if [[ -d "$LEGACY_STATE_DIR" ]]; then
+  echo "==> Migrating legacy state directory from $LEGACY_STATE_DIR to $TARGET_STATE_DIR..."
+  mkdir -p "$TARGET_STATE_DIR" 2>/dev/null || true
+  if [[ -f "$LEGACY_STATE_DIR/commands.log" && ! -f "$TARGET_STATE_DIR/commands.log" ]]; then
+    mv "$LEGACY_STATE_DIR/commands.log" "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
+  elif [[ -f "$LEGACY_STATE_DIR/commands.log" && -f "$TARGET_STATE_DIR/commands.log" ]]; then
+    cat "$LEGACY_STATE_DIR/commands.log" >> "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
+    rm -f "$LEGACY_STATE_DIR/commands.log" 2>/dev/null || true
+  fi
+  rm -rf "$LEGACY_STATE_DIR" 2>/dev/null || true
+  echo "✔ Successfully migrated state directory to $TARGET_STATE_DIR"
 fi
 
 # 1. Update or clone repository

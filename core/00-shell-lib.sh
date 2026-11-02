@@ -157,7 +157,22 @@ lsfunc() {
 
 # Common shell helpers
 
-_CMD_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/commands.log"
+# Dynamic ZenCLI State Directory & Command Log
+_ZEN_STATE_DIR="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+_CMD_LOG="${_CMD_LOG:-${CMD_LOG:-$_ZEN_STATE_DIR/commands.log}}"
+
+# Auto-migrate legacy ~/.local/state/dotfiles/commands.log if present
+_LEGACY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+if [[ -d "$_LEGACY_STATE_DIR" ]]; then
+  mkdir -p "$_ZEN_STATE_DIR" 2>/dev/null || true
+  if [[ -f "$_LEGACY_STATE_DIR/commands.log" && ! -f "$_CMD_LOG" ]]; then
+    mv "$_LEGACY_STATE_DIR/commands.log" "$_CMD_LOG" 2>/dev/null || true
+  elif [[ -f "$_LEGACY_STATE_DIR/commands.log" && -f "$_CMD_LOG" ]]; then
+    cat "$_LEGACY_STATE_DIR/commands.log" >> "$_CMD_LOG" 2>/dev/null || true
+    rm -f "$_LEGACY_STATE_DIR/commands.log" 2>/dev/null || true
+  fi
+  rm -rf "$_LEGACY_STATE_DIR" 2>/dev/null || true
+fi
 
 # Separate consecutive prompt blocks without polluting captured stdout.
 _prompt_gap() {

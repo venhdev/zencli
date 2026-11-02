@@ -278,8 +278,10 @@ function _zen_doctor {
     Write-Host "`n=== ZENCLI DOCTOR DIAGNOSTIC REPORT (Windows) ===" -ForegroundColor Cyan
     Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Edition: $PSEdition | Version: $($PSVersionTable.PSVersion)"
 
-    # Dotfiles root
-    $dotfilesRoot = if ($global:DOTFILES_DIR -and (Test-Path $global:DOTFILES_DIR)) {
+    # ZenCLI root
+    $zenRoot = if ($global:ZEN_DIR -and (Test-Path $global:ZEN_DIR)) {
+        $global:ZEN_DIR
+    } elseif ($global:DOTFILES_DIR -and (Test-Path $global:DOTFILES_DIR)) {
         $global:DOTFILES_DIR
     } elseif (Test-Path "$env:USERPROFILE\.config\zen") {
         "$env:USERPROFILE\.config\zen"
@@ -287,10 +289,10 @@ function _zen_doctor {
         "$env:USERPROFILE\.config\dotfiles"
     }
 
-    if (Test-Path $dotfilesRoot) {
-        Write-Host "✔ Dotfiles root: $dotfilesRoot" -ForegroundColor Green
+    if (Test-Path $zenRoot) {
+        Write-Host "✔ ZenCLI root: $zenRoot" -ForegroundColor Green
     } else {
-        Write-Host "✖ Dotfiles root missing: $dotfilesRoot" -ForegroundColor Red
+        Write-Host "✖ ZenCLI root missing: $zenRoot" -ForegroundColor Red
     }
 
     # Git
@@ -457,8 +459,39 @@ function _zen_version_ps {
     Write-Host "Timezone   : $($tz.Id) ($($tz.StandardName), UTC$offsetStr)"
 }
 
+function _zen_cmd_migrate_ps {
+    param([string[]]$RemainingArgs)
+    Write-Host "==> Checking ZenCLI migrations (Windows)..." -ForegroundColor Cyan
+    $legacyState = "$env:LOCALAPPDATA\dotfiles"
+    $targetState = if ($env:ZEN_STATE_DIR) { $env:ZEN_STATE_DIR } else { "$env:LOCALAPPDATA\zen" }
+    $migrated = $false
+
+    if (Test-Path $legacyState) {
+        if (!(Test-Path $targetState)) {
+            New-Item -ItemType Directory -Path $targetState -Force | Out-Null
+        }
+        if (Test-Path "$legacyState\commands.log") {
+            if (!(Test-Path "$targetState\commands.log")) {
+                Move-Item -Path "$legacyState\commands.log" -Destination "$targetState\commands.log" -Force
+                Write-Host "  ✔ Migrated commands.log to $targetState\commands.log" -ForegroundColor Green
+            } else {
+                Get-Content "$legacyState\commands.log" | Add-Content "$targetState\commands.log"
+                Remove-Item -Path "$legacyState\commands.log" -Force
+                Write-Host "  ✔ Merged legacy commands.log into $targetState\commands.log" -ForegroundColor Green
+            }
+        }
+        Remove-Item -Path $legacyState -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  ✔ Cleaned up legacy directory: $legacyState" -ForegroundColor Green
+        $migrated = $true
+    }
+
+    if (-not $migrated) {
+        Write-Host "✔ Windows environment is clean and up to date." -ForegroundColor Green
+    }
+}
+
 # Universal Package Manager & Ecosystem shim
-function zen {
+function zencli {
     param(
         [Parameter(Position = 0)]
         [string]$Action = "",
@@ -475,6 +508,10 @@ function zen {
             _zen_version_ps
             Write-Host ""
             # Fall through to default help display
+        }
+        "migrate" {
+            _zen_cmd_migrate_ps -RemainingArgs $RemainingArgs
+            return
         }
         "ski" {
             _zen_cmd_ski -RemainingArgs $RemainingArgs
@@ -513,7 +550,7 @@ function zen {
             if (Get-Command insdf -ErrorAction SilentlyContinue) {
                 insdf @RemainingArgs
             } else {
-                Write-Error "Dotfiles setup command not available."
+                Write-Error "ZenCLI setup command not available."
             }
             return
         }
@@ -542,12 +579,12 @@ function zen {
         "upgrade" {
             if (-not $mgr) { Write-Error "No supported package manager found (winget, scoop, choco)."; return }
             if ($RemainingArgs.Count -eq 0) {
-                Write-Warning "Notice: 'zen upgrade' requires an explicit target to prevent unintended system-wide changes."
+                Write-Warning "Notice: 'zencli upgrade' requires an explicit target to prevent unintended system-wide changes."
                 Write-Host @"
 Usage:
-  zen upgrade --all       Upgrade system packages AND managed tools
-  zen upgrade system      Upgrade system package manager only
-  zen upgrade <package>   Upgrade or reinstall specific package
+  zencli upgrade --all       Upgrade system packages AND managed tools
+  zencli upgrade system      Upgrade system package manager only
+  zencli upgrade <package>   Upgrade or reinstall specific package
 "@
                 return
             }
@@ -560,7 +597,7 @@ Usage:
         { $_ -in "install", "add", "i" } {
             if (-not $mgr) { Write-Error "No supported package manager found (winget, scoop, choco)."; return }
             if ($RemainingArgs.Count -eq 0) {
-                Write-Error "Error: Missing package name. Usage: zen i <package...>"
+                Write-Error "Error: Missing package name. Usage: zencli i <package...>"
                 return
             }
             switch ($mgr) {
@@ -572,7 +609,7 @@ Usage:
         { $_ -in "remove", "uninstall", "rm" } {
             if (-not $mgr) { Write-Error "No supported package manager found (winget, scoop, choco)."; return }
             if ($RemainingArgs.Count -eq 0) {
-                Write-Error "Error: Missing package name to remove. Usage: zen rm <package...>"
+                Write-Error "Error: Missing package name to remove. Usage: zencli rm <package...>"
                 return
             }
             switch ($mgr) {
@@ -584,7 +621,7 @@ Usage:
         "search" {
             if (-not $mgr) { Write-Error "No supported package manager found (winget, scoop, choco)."; return }
             if ($RemainingArgs.Count -eq 0) {
-                Write-Error "Error: Missing search query. Usage: zen search <query>"
+                Write-Error "Error: Missing search query. Usage: zencli search <query>"
                 return
             }
             switch ($mgr) {
@@ -598,34 +635,42 @@ Usage:
             Write-Host @"
 ZenCLI - Unified Ecosystem Gateway & Developer Tool Orchestrator
 
-Usage: zen <command> [arguments...]
+Usage:
+  zencli <command> [arguments...]
+  zen    <command> [arguments...] (terminal shorthand)
 
 Core & Help:
-  zen                    Show version summary and quick command helper
-  zen -v, --version      Show version and environment details
-  zen -h, --help         Show this help message
+  zencli                   Show version summary and quick command helper
+  zencli -v, --version     Show version and environment details
+  zencli -h, --help        Show this help message
+  zencli migrate           Audit and migrate legacy configurations/state
 
 Headless Package Management:
-  zen i <package...>     Install a package (shorthand for zen install)
-  zen rm <package...>    Uninstall a package (shorthand for zen remove)
-  zen update             Refresh package indexes
-  zen upgrade --all      Upgrade all installed packages
-  zen search <query>     Search for packages
+  zencli i <package...>    Install a package (shorthand for zencli install)
+  zencli rm <package...>   Uninstall a package (shorthand for zencli remove)
+  zencli update            Refresh package indexes
+  zencli upgrade --all     Upgrade all installed packages
+  zencli search <query>    Search for packages
 
 Agent Skills Management:
-  zen ski [source|cmd]   Agent skills orchestrator (add, rm, ls, update, find)
-  zen skiv [options]     Personal skills (venhdev/skills, default: .agents/skills)
-  zen skiup              Update project skills according to lockfile (-p -y)
+  zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
+  zencli skiv [options]    Personal skills (venhdev/skills, default: .agents/skills)
+  zencli skiup             Update project skills according to lockfile (-p -y)
 
 Ecosystem & Workstation:
-  zen sync               Pull latest commits & reload aliases into session
-  zen setup [modules...] Run dotfiles installer & module setup
-  zen sleep [minutes]    Put computer to sleep after countdown (default: 30)
-  zen ali [query]        Search & list shortcuts and aliases
-  zen doctor             Diagnose environment health & tool paths
+  zencli sync              Pull latest commits & reload aliases into session
+  zencli setup [mods...]   Run ZenCLI installer & module setup
+  zencli sleep [minutes]   Put computer to sleep after countdown (default: 30)
+  zencli ali [query]       Search & list shortcuts and aliases
+  zencli doctor            Diagnose environment health & tool paths
 
 Active manager detected: $mgrDisplay
 "@
         }
     }
+}
+
+# Terminal shorthand alias for zencli
+function zen {
+    zencli @args
 }

@@ -20,14 +20,19 @@ _zen_doctor() {
   local c_gray="\033[90m"
 
   local dotfiles_root
-  if declare -F _get_dotfiles_root >/dev/null 2>&1; then
+  if declare -F _get_zen_root >/dev/null 2>&1; then
+    dotfiles_root="$(_get_zen_root)"
+  elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
     dotfiles_root="$(_get_dotfiles_root)"
   else
-    dotfiles_root="${DOTFILES:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles}}"
+    dotfiles_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
   fi
-  local manifest_file="${XDG_CONFIG_HOME:-$HOME/.config}/zen/.installed.json"
-  [[ -f "$manifest_file" ]] || manifest_file="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.installed.json"
-  [[ -f "$manifest_file" ]] || manifest_file="$dotfiles_root/.installed.json"
+  local manifest_file
+  if declare -F _get_manifest_path >/dev/null 2>&1; then
+    manifest_file="$(_get_manifest_path)"
+  else
+    manifest_file="${ZEN_MANIFEST:-$dotfiles_root/.installed.json}"
+  fi
 
   printf "\n${c_bold}${c_cyan}=== ZENCLI ECOSYSTEM HEALTH DOCTOR ===${c_reset}\n"
   printf "${c_gray}Authoritative Inspection & System Diagnostic Ledger${c_reset}\n\n"
@@ -65,14 +70,14 @@ _zen_doctor() {
   ((pass_count++))
 
   # ----------------------------------------------------------------------------
-  # [2/5] Shell Profile Integration & Dotfiles Root
+  # [2/5] Shell Profile Integration & ZenCLI Root
   # ----------------------------------------------------------------------------
   printf "\n${c_bold}[2/5] Shell Profile Integration${c_reset}\n"
   if [[ -d "$dotfiles_root" ]]; then
-    printf "  ${c_green}✔${c_reset} Dotfiles Root: %s\n" "$dotfiles_root"
+    printf "  ${c_green}✔${c_reset} ZenCLI Root: %s\n" "$dotfiles_root"
     ((pass_count++))
   else
-    printf "  ${c_red}✖${c_reset} Dotfiles Root not found at %s\n" "$dotfiles_root"
+    printf "  ${c_red}✖${c_reset} ZenCLI Root not found at %s\n" "$dotfiles_root"
     ((fail_count++))
   fi
 
@@ -179,10 +184,18 @@ except Exception:
   done
 
   # ----------------------------------------------------------------------------
-  # [5/5] Command Audit Log & State Ledger
+  # [5/5] Command Audit Log & State Directory
   # ----------------------------------------------------------------------------
   printf "\n${c_bold}[5/5] Command Audit Log & State Directory${c_reset}\n"
-  local log_file="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/commands.log"
+  local log_file
+  if declare -F _cmdlog_file >/dev/null 2>&1; then
+    log_file="$(_cmdlog_file)"
+  elif declare -F _get_cmdlog_path >/dev/null 2>&1; then
+    log_file="$(_get_cmdlog_path)"
+  else
+    local state_dir="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+    log_file="${_CMD_LOG:-${CMD_LOG:-$state_dir/commands.log}}"
+  fi
   local log_dir="$(dirname "$log_file")"
   if [[ -w "$log_dir" || ( ! -d "$log_dir" && -w "$(dirname "$log_dir")" ) ]]; then
     local log_size="0 B"
@@ -193,6 +206,14 @@ except Exception:
     ((pass_count++))
   else
     printf "  ${c_yellow}⚠${c_reset} Command log directory not writable: %s\n" "$log_dir"
+    ((warn_count++))
+  fi
+
+  # Check if legacy migration is pending
+  local legacy_state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+  local legacy_config="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
+  if [[ -d "$legacy_state" || ( -d "$legacy_config" && "$legacy_config" != "$dotfiles_root" ) ]]; then
+    printf "  ${c_yellow}⚠${c_reset} Legacy artifacts detected. Run 'zencli migrate' to clean up.\n"
     ((warn_count++))
   fi
 

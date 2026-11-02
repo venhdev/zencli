@@ -165,8 +165,19 @@ open_target() {
   esac
 }
 
-# Self-locating Dotfiles Root Resolver
-_get_dotfiles_root() {
+# ==============================================================================
+# ZENCLI ECOSYSTEM METADATA & DYNAMIC PATHS CONTRACT
+# ==============================================================================
+_ZEN_APP_NAME="zencli"
+_ZEN_APP_SHORT="zen"
+_ZEN_APP_DISPLAY="ZenCLI"
+
+# Dynamic Root Directory Resolver
+_get_zen_root() {
+  if [[ -n "${ZEN_ROOT:-}" && -d "$ZEN_ROOT" ]]; then
+    echo "$ZEN_ROOT"
+    return
+  fi
   if [[ -n "${ZEN_DIR:-}" && -d "$ZEN_DIR" ]]; then
     echo "$ZEN_DIR"
     return
@@ -199,13 +210,215 @@ _get_dotfiles_root() {
     echo "$xdg_dotfiles"
     return
   fi
-  echo "$HOME/.config/zen"
+  echo "${XDG_CONFIG_HOME:-$HOME/.config}/zen"
 }
 
-# zen: Unified Ecosystem Gateway, Package Manager & Tools Orchestrator
-zen() {
+# Backward compatibility alias for dotfiles root
+_get_dotfiles_root() {
+  _get_zen_root
+}
+
+# Dynamic State Directory Resolver
+_get_zen_state_dir() {
+  echo "${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+}
+
+# Dynamic Command Log File Resolver
+_get_cmdlog_path() {
+  local state_dir="$(_get_zen_state_dir)"
+  echo "${_CMD_LOG:-${CMD_LOG:-$state_dir/commands.log}}"
+}
+
+# Dynamic Manifest File Resolver
+_get_manifest_path() {
+  local root="$(_get_zen_root)"
+  local candidates=(
+    "${ZEN_MANIFEST:-}"
+    "$root/.installed.json"
+    "$(_get_zen_state_dir)/.installed.json"
+    "${XDG_CONFIG_HOME:-$HOME/.config}/zen/.installed.json"
+    "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.installed.json"
+  )
+  for c in "${candidates[@]}"; do
+    if [[ -n "$c" && -f "$c" ]]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  echo "$root/.installed.json"
+}
+
+# ==============================================================================
+# ZENCLI MIGRATION & REORGANIZATION ENGINE
+# ==============================================================================
+_zen_cmd_migrate() {
+  local mode="apply"
+  for arg in "$@"; do
+    case "$arg" in
+      --status|--check|-s)
+        mode="status"
+        ;;
+      --dry-run|-n)
+        mode="dry-run"
+        ;;
+      --apply|-a)
+        mode="apply"
+        ;;
+      --silent|-q)
+        mode="silent"
+        ;;
+      -h|--help)
+        cat <<EOF
+Usage: zencli migrate [OPTIONS] (or: zen migrate)
+
+Audit and migrate legacy configurations, state files, and directories.
+
+Options:
+  --status, -s    Inspect legacy artifacts without changing anything
+  --dry-run, -n   Simulate migration and cleanup steps
+  --apply, -a     Execute migration and clean up legacy artifacts (default)
+  --silent, -q    Run quietly without output unless an error occurs
+  -h, --help      Show this help message
+EOF
+        return 0
+        ;;
+    esac
+  done
+
+  local legacy_state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+  local target_state="$(_get_zen_state_dir)"
+  local legacy_config="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
+  local target_config="$(_get_zen_root)"
+
+  local pending=0
+
+  # Check MIG-001: Legacy State Directory
+  local mig_state_pending=0
+  if [[ -d "$legacy_state" ]]; then
+    mig_state_pending=1
+    ((pending++))
+  fi
+
+  # Check MIG-002: Legacy Config Directory
+  local mig_config_pending=0
+  if [[ -d "$legacy_config" && "$legacy_config" != "$target_config" ]]; then
+    mig_config_pending=1
+    ((pending++))
+  fi
+
+  # Check MIG-003: Git config reference
+  local mig_git_pending=0
+  if command -v git >/dev/null 2>&1 && [[ -f "$HOME/.gitconfig" ]]; then
+    if git config --global --get-all include.path 2>/dev/null | grep -qE 'dotfiles/\.gitconfig'; then
+      mig_git_pending=1
+      ((pending++))
+    fi
+  fi
+
+  if [[ "$mode" == "status" ]]; then
+    echo "=== ZENCLI MIGRATION STATUS ==="
+    if (( pending == 0 )); then
+      echo "✔ System is clean and up to date. No pending migrations."
+      return 0
+    fi
+    echo "Pending migrations ($pending):"
+    (( mig_state_pending )) && echo "  • [MIG-001] Legacy state directory present: $legacy_state -> $target_state"
+    (( mig_config_pending )) && echo "  • [MIG-002] Legacy config directory present: $legacy_config -> $target_config"
+    (( mig_git_pending )) && echo "  • [MIG-003] Legacy git config include detected in ~/.gitconfig"
+    echo
+    echo "Run 'zencli migrate' to apply migrations and clean up legacy items."
+    return 0
+  fi
+
+  if [[ "$mode" == "dry-run" ]]; then
+    echo "=== ZENCLI MIGRATION SIMULATION (DRY-RUN) ==="
+    if (( pending == 0 )); then
+      echo "✔ Nothing to migrate."
+      return 0
+    fi
+    if (( mig_state_pending )); then
+      echo "[DRY-RUN] Would create: $target_state"
+      [[ -f "$legacy_state/commands.log" ]] && echo "[DRY-RUN] Would move: $legacy_state/commands.log -> $target_state/commands.log"
+      echo "[DRY-RUN] Would remove: $legacy_state"
+    fi
+    if (( mig_config_pending )); then
+      echo "[DRY-RUN] Would migrate contents of $legacy_config to $target_config"
+      echo "[DRY-RUN] Would remove: $legacy_config"
+    fi
+    if (( mig_git_pending )); then
+      echo "[DRY-RUN] Would update ~/.gitconfig include.path to point to $target_config/.gitconfig"
+    fi
+    return 0
+  fi
+
+  # Apply mode (and silent mode)
+  log_msg() {
+    [[ "$mode" != "silent" ]] && echo "$@"
+  }
+
+  if (( pending == 0 )); then
+    log_msg "✔ All configurations and state directories are up to date. Nothing to migrate."
+    return 0
+  fi
+
+  log_msg "==> Applying ZenCLI migrations ($pending items)..."
+
+  # Apply MIG-001: State Directory Migration
+  if (( mig_state_pending )); then
+    mkdir -p "$target_state" 2>/dev/null || true
+    if [[ -f "$legacy_state/commands.log" ]]; then
+      if [[ ! -f "$target_state/commands.log" ]]; then
+        mv "$legacy_state/commands.log" "$target_state/commands.log" 2>/dev/null || true
+        log_msg "  ✔ Migrated commands.log to $target_state/commands.log"
+      elif [[ -s "$legacy_state/commands.log" ]]; then
+        cat "$legacy_state/commands.log" >> "$target_state/commands.log" 2>/dev/null || true
+        rm -f "$legacy_state/commands.log" 2>/dev/null || true
+        log_msg "  ✔ Merged legacy commands.log into $target_state/commands.log"
+      fi
+    fi
+    rm -rf "$legacy_state" 2>/dev/null || true
+    log_msg "  ✔ Cleaned up legacy state directory: $legacy_state"
+  fi
+
+  # Apply MIG-002: Config Directory Migration
+  if (( mig_config_pending )); then
+    mkdir -p "$target_config" 2>/dev/null || true
+    for f in "$legacy_config/.installed.json" "$legacy_config/local/local.env"; do
+      if [[ -f "$f" ]]; then
+        local rel="${f#"$legacy_config/"}"
+        local dest="$target_config/$rel"
+        if [[ ! -f "$dest" ]]; then
+          mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+          cp -a "$f" "$dest" 2>/dev/null || true
+          log_msg "  ✔ Preserved $rel from legacy config"
+        fi
+      fi
+    done
+    rm -rf "$legacy_config" 2>/dev/null || true
+    log_msg "  ✔ Cleaned up legacy config directory: $legacy_config"
+  fi
+
+  # Apply MIG-003: Git Config Reference
+  if (( mig_git_pending )); then
+    git config --global --unset-all include.path 'dotfiles/\.gitconfig' 2>/dev/null || true
+    if [[ -f "$target_config/.gitconfig" ]]; then
+      if ! git config --global --get-all include.path 2>/dev/null | grep -Fxq "$target_config/.gitconfig"; then
+        git config --global --add include.path "$target_config/.gitconfig"
+      fi
+    fi
+    log_msg "  ✔ Updated global Git config include.path to $target_config/.gitconfig"
+  fi
+
+  log_msg "✔ Migration completed successfully."
+  return 0
+}
+
+# ==============================================================================
+# ZENCLI: CANONICAL ECOSYSTEM GATEWAY & PACKAGE ORCHESTRATOR
+# ==============================================================================
+zencli() {
   local subcmd="${1:-}"
-  local dotfiles_root="$(_get_dotfiles_root)"
+  local dotfiles_root="$(_get_zen_root)"
 
   case "$subcmd" in
     "")
@@ -222,6 +435,11 @@ zen() {
         echo "Error: Developer tools installer not found at $installer" >&2
         return 1
       fi
+      ;;
+
+    migrate)
+      shift
+      _zen_cmd_migrate "$@"
       ;;
 
     i|install)
@@ -349,10 +567,15 @@ zen() {
 
     *)
       echo "❌ Unknown subcommand: '$subcmd'" >&2
-      echo "Run 'zen --help' for available commands and usage." >&2
+      echo "Run 'zencli --help' (or 'zen --help') for available commands and usage." >&2
       return 1
       ;;
   esac
+}
+
+# zen: Terminal shorthand alias/wrapper for zencli
+zen() {
+  zencli "$@"
 }
 
 _zen_cmd_install() {
@@ -635,7 +858,10 @@ _zen_cmd_sync() {
     echo "  ℹ '$dotfiles_root' is not a git repository; skipping pull."
   fi
 
-  # 2. Synchronize git include.path
+  # 2. Automated migration & legacy cleanup
+  _zen_cmd_migrate --silent 2>/dev/null || true
+
+  # 3. Synchronize git include.path
   if command -v git >/dev/null 2>&1 && [[ -f "$dotfiles_root/.gitconfig" ]]; then
     if ! git config --global --get-all include.path 2>/dev/null | grep -Fxq "$dotfiles_root/.gitconfig"; then
       git config --global --add include.path "$dotfiles_root/.gitconfig"
@@ -762,7 +988,7 @@ _zen_package_action() {
 }
 
 _zen_version() {
-  local dotfiles_root="$(_get_dotfiles_root)"
+  local dotfiles_root="$(_get_zen_root)"
   local ver="v1.2.0"
   local commit_sha="-"
   local commit_date="-"
@@ -832,37 +1058,39 @@ _zen_help() {
 ZenCLI - Unified Ecosystem Gateway & Developer Tool Orchestrator
 
 Usage:
-  zen [subcommand] [arguments...]
+  zencli [subcommand] [arguments...]
+  zen    [subcommand] [arguments...] (terminal shorthand)
 
 Core & Help:
-  zen                      Show version summary and quick command helper
-  zen -v, --version        Show version and environment details
-  zen -h, --help           Show this help message
+  zencli                   Show version summary and quick command helper
+  zencli -v, --version     Show version and environment details
+  zencli -h, --help        Show this help message
+  zencli migrate [opts]    Audit and migrate legacy configurations/state
 
 Developer Tools TUI:
-  zen tui                  Launch interactive Developer Tools TUI
+  zencli tui               Launch interactive Developer Tools TUI
 
 Headless Package Management:
-  zen i <pkg...>           Install system package(s) or managed tool(s)
-  zen i --all              Batch install missing managed dev tools
-  zen rm <pkg...>          Uninstall package(s)
-  zen update [--all]       Refresh package index indexes (--all includes tool metadata)
-  zen upgrade --all        Upgrade system packages AND managed developer tools
-  zen upgrade system       Upgrade system package manager only
-  zen upgrade <pkg...>     Upgrade or reinstall specific package(s)
-  zen search <query>       Search for packages in repository
+  zencli i <pkg...>        Install system package(s) or managed tool(s)
+  zencli i --all           Batch install missing managed dev tools
+  zencli rm <pkg...>       Uninstall package(s)
+  zencli update [--all]    Refresh package index indexes (--all includes tool metadata)
+  zencli upgrade --all     Upgrade system packages AND managed developer tools
+  zencli upgrade system    Upgrade system package manager only
+  zencli upgrade <pkg...>  Upgrade or reinstall specific package(s)
+  zencli search <query>    Search for packages in repository
 
 Agent Skills Management:
-  zen ski [source|cmd]     Agent skills orchestrator (add, rm, ls, update, find)
-  zen skiv [options]       Personal skills (venhdev/skills, default: .agents/skills)
-  zen skiup                Update project skills according to lockfile (-p -y)
+  zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
+  zencli skiv [options]    Personal skills (venhdev/skills, default: .agents/skills)
+  zencli skiup             Update project skills according to lockfile (-p -y)
 
 Ecosystem & Workstation:
-  zen doctor               Audit ecosystem health (OS, symlinks, git, hooks, tools)
-  zen ali [list|query]     Directory & search for all dotfiles shortcuts and aliases
-  zen setup [modules...]   Run dotfiles modular configuration and setup (replaces insdf)
-  zen sync                 Pull latest git commits and reload newest aliases
-  zen sleep [minutes]      Put Windows machine to sleep after countdown (default: 30)
+  zencli doctor            Audit ecosystem health (OS, symlinks, git, hooks, tools)
+  zencli ali [list|query]  Directory & search for all ZenCLI shortcuts and aliases
+  zencli setup [mods...]   Run ZenCLI modular configuration and setup
+  zencli sync              Pull latest git commits and reload newest aliases
+  zencli sleep [minutes]   Put Windows machine to sleep after countdown (default: 30)
 
 Active system manager: ${mgr:-none}
 EOF

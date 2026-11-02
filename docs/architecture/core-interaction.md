@@ -49,5 +49,5 @@ Standardized interactive patterns across dotfiles (`core/00-shell-lib.sh`, `inst
 
 1. **Explicit TTY Isolation**: Interactive prompts must explicitly read/write to `/dev/tty` so scripts function when piped into bash (`curl ... | bash`).
 2. **Safe Defaults**: Any destructive, state-mutating, or Windows-integration prompt must provide an explicit `[None]` / skip path and fail closed on abort.
-3. **Audit Trail**: Any execution gated by `_run_confirm` must append timestamped, shell-quoted invocations along with execution status, duration, and working directory to `$_CMD_LOG` (`~/.local/state/dotfiles/commands.log`), accessible and actionable via `cmdlog` / `clog` and `cr`.
+3. **Audit Trail**: Any execution gated by `_run_confirm` must append timestamped, shell-quoted invocations along with execution status, duration, and working directory to `$_CMD_LOG` (`~/.local/state/zen/commands.log`), accessible and actionable via `cmdlog` / `clog` and `cr`.
 4. **Cross-Platform Primitives**: System-dependent operations (`clip`, `open_target`, `pkg`, `svc`) must be invoked via standard abstraction shims, ensuring identical behavioral contracts across Linux, macOS (Darwin), and Windows (PowerShell/WSL/Git Bash).

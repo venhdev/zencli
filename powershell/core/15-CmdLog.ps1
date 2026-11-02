@@ -4,7 +4,20 @@ function _cmdlog_file {
     if ($env:CMD_LOG) {
         return $env:CMD_LOG
     }
-    $stateDir = "$env:LOCALAPPDATA\dotfiles"
+    $stateDir = if ($env:ZEN_STATE_DIR) { $env:ZEN_STATE_DIR } else { "$env:LOCALAPPDATA\zen" }
+    $legacyDir = "$env:LOCALAPPDATA\dotfiles"
+    if (Test-Path $legacyDir) {
+        if (!(Test-Path $stateDir)) {
+            New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+        }
+        if ((Test-Path "$legacyDir\commands.log") -and !(Test-Path "$stateDir\commands.log")) {
+            Move-Item -Path "$legacyDir\commands.log" -Destination "$stateDir\commands.log" -Force -ErrorAction SilentlyContinue
+        } elseif ((Test-Path "$legacyDir\commands.log") -and (Test-Path "$stateDir\commands.log")) {
+            Get-Content "$legacyDir\commands.log" | Add-Content "$stateDir\commands.log" -ErrorAction SilentlyContinue
+            Remove-Item -Path "$legacyDir\commands.log" -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -Path $legacyDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (!(Test-Path $stateDir)) {
         New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
     }

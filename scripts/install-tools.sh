@@ -794,8 +794,9 @@ _action_show_help() {
     "  u, ^       Stage tool for UPDATE   [^]"
     "  d, -       Stage tool for REMOVE   [-]"
     "  Space      Smart toggle focused tool"
-    "  A          Select ALL tools (Stage All)"
-    "  a, c       Deselect ALL (Clear queue)"
+    "  a, A       Select all / Toggle all"
+    "             (stages all if partial, clears if all)"
+    "  c, C       Clear entire staging queue"
     "  m          Stage ALL missing tools [+]"
     ""
     "Execution & Transactions:"
@@ -994,17 +995,17 @@ _main_tui_loop() {
     local q_summary="${q_parts[*]}"
     q_summary="${q_summary// /, }"
     if (( cols >= 72 )); then
-      _tui_draw_footer "QUEUE: $q_summary │ [Enter] Review & Apply │ [A] All │ [a] Clear"
+      _tui_draw_footer "QUEUE: $q_summary │ [Enter] Review & Apply │ [a] All │ [c] Clear"
     else
-      _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [A] All │ [a] Clear"
+      _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [a] All │ [c] Clear"
     fi
   else
     if (( cols >= 76 )); then
-      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [A] All  [a] Clear  [?] Help  [q] Quit"
+      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [a] All  [c] Clear  [?] Help  [q] Quit"
     elif (( cols >= 62 )); then
-      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [A] All  [a] Clear  [?] Help  [q] Quit"
+      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [a] All  [c] Clear  [?] Help  [q] Quit"
     else
-      _tui_draw_footer "[↑/↓] Move  [A] All  [a] Clear  [?] Help  [q] Quit"
+      _tui_draw_footer "[↑/↓] Move  [a] All  [c] Clear  [?] Help  [q] Quit"
     fi
   fi
 
@@ -1058,14 +1059,29 @@ _main_tui_loop() {
         fi
       done
       ;;
-    SELECT_ALL)
+    TOGGLE_ALL)
+      local all_staged=1
       for ((i=0; i<item_count; i++)); do
-        if (( statuses[i] == 0 )); then
-          staged_actions[i]=1
-        else
-          staged_actions[i]=2
+        if (( staged_actions[i] == 0 )); then
+          all_staged=0
+          break
         fi
       done
+      if (( all_staged )); then
+        # When all are already staged, pressing 'a' clears all
+        for ((i=0; i<item_count; i++)); do
+          staged_actions[i]=0
+        done
+      else
+        # When 0 or partially staged, pressing 'a' stages all
+        for ((i=0; i<item_count; i++)); do
+          if (( statuses[i] == 0 )); then
+            staged_actions[i]=1
+          else
+            staged_actions[i]=2
+          fi
+        done
+      fi
       ;;
     CLEAR)
       for ((i=0; i<item_count; i++)); do

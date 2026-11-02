@@ -53,10 +53,10 @@ for arg in "$@"; do
       echo "  -c, --clean  Wipe previous installation directory before installing"
       echo "  -h, --help   Show this help message"
       echo
-      echo "Modules: ssh, wsl, mobile, docker, ai, gitconfig (or git), zen"
+      echo "Modules: ssh, wsl, mobile, docker, ai, gitconfig (or git), tools, tz (timezone)"
       exit 0
       ;;
-    ssh|wsl|mobile|docker|ai|git|gitconfig|zen|vdots|dtools|tools)
+    ssh|wsl|mobile|docker|ai|git|gitconfig|zen|vdots|dtools|tools|tz|timezone)
       OPT_MODULES+=("$arg")
       ;;
   esac
@@ -414,10 +414,12 @@ fi
 existing_ssh_init=""
 existing_win_path=""
 existing_chrome_path=""
+existing_tz=""
 if [[ -f "$DIR/local/local.env" ]]; then
   existing_ssh_init="$(grep -E '^export DOTFILES_SSH_INIT=' "$DIR/local/local.env" | cut -d'"' -f2 || true)"
   existing_win_path="$(grep -E '^export DOTFILES_WIN_PATH=' "$DIR/local/local.env" | cut -d'"' -f2 || true)"
   existing_chrome_path="$(grep -E '^export CHROME_EXECUTABLE=' "$DIR/local/local.env" | cut -d'"' -f2 || true)"
+  existing_tz="$(grep -E '^export TZ=' "$DIR/local/local.env" | cut -d'"' -f2 || true)"
 fi
 
 detected_ssh_keys=()
@@ -444,6 +446,43 @@ elif [[ -d "/c/Windows" ]]; then
 else
   default_win="/mnt/c/Windows"
 fi
+
+auto_tz=""
+if [[ -n "$existing_tz" ]]; then
+  auto_tz="$existing_tz"
+else
+  # Check Windows host timezone via tzutil.exe if on WSL
+  if is_wsl; then
+    tzutil_bin="${existing_win_path:-$default_win}/System32/tzutil.exe"
+    [[ ! -x "$tzutil_bin" ]] && tzutil_bin="/mnt/c/Windows/System32/tzutil.exe"
+    if [[ -x "$tzutil_bin" ]]; then
+      win_tz="$("$tzutil_bin" /g 2>/dev/null | tr -d '\r\n' || true)"
+      case "$win_tz" in
+        *"SE Asia"*|*"Bangkok"*|*"Hanoi"*|*"Jakarta"*)
+          auto_tz="Asia/Ho_Chi_Minh"
+          ;;
+        *"Singapore"*)
+          auto_tz="Asia/Singapore"
+          ;;
+        *"Tokyo"*)
+          auto_tz="Asia/Tokyo"
+          ;;
+        *"Korea"*)
+          auto_tz="Asia/Seoul"
+          ;;
+        *"China"*)
+          auto_tz="Asia/Shanghai"
+          ;;
+        *"Taipei"*)
+          auto_tz="Asia/Taipei"
+          ;;
+      esac
+    fi
+  fi
+  # Fallback to Asia/Ho_Chi_Minh or current TZ
+  [[ -z "$auto_tz" ]] && auto_tz="${TZ:-Asia/Ho_Chi_Minh}"
+fi
+default_tz="$auto_tz"
 
 # Module definitions:
 # index 0: [ALL]
@@ -581,13 +620,46 @@ _prompt_win_tools() {
   fi
 }
 
+_prompt_timezone() {
+  local tz_menu_items=(
+    "Asia/Ho_Chi_Minh  (UTC+7 - Vietnam, ICT)"
+    "Etc/UTC           (UTC+0 - Coordinated Universal Time)"
+    "[Keep System]     (Do not export TZ variable)"
+    "[Custom]          Enter IANA Timezone manually..."
+  )
+  local tz_choice=0
+  if [[ "$default_tz" == "Etc/UTC" || "$default_tz" == "UTC" ]]; then
+    tz_choice=1
+  elif [[ -z "$default_tz" ]]; then
+    tz_choice=2
+  elif [[ "$default_tz" != "Asia/Ho_Chi_Minh" ]]; then
+    tz_choice=3
+  fi
+
+  _tui_select_one "DOTFILES CONFIGURATION" "Timezone Selection (UTC / Local)" tz_choice "${tz_menu_items[@]}"
+
+  case "$tz_choice" in
+    0) tz_val="Asia/Ho_Chi_Minh" ;;
+    1) tz_val="Etc/UTC" ;;
+    2) tz_val="" ;;
+    3)
+      printf "Enter IANA Timezone (e.g. Asia/Tokyo, America/New_York): " >/dev/tty
+      local input_tz
+      IFS= read -r input_tz < /dev/tty
+      tz_val="${input_tz:-Asia/Ho_Chi_Minh}"
+      ;;
+  esac
+}
+
 # 3. Interactive Selection or Non-interactive Fallback
 ssh_init_val="$default_ssh"
 win_path_val="$default_win"
 chrome_path_val="$existing_chrome_path"
+tz_val="$default_tz"
 
 target_ssh_prompt=0
 target_win_prompt=0
+target_tz_prompt=0
 
 if (( ${#OPT_MODULES[@]} > 0 )); then
   for m in "${OPT_MODULES[@]}"; do
@@ -599,6 +671,7 @@ if (( ${#OPT_MODULES[@]} > 0 )); then
       ai) selected[5]=1 ;;
       git|gitconfig) selected[6]=1 ;;
       tools) selected[7]=1 ;;
+      tz|timezone) target_tz_prompt=1 ;;
     esac
   done
 fi
@@ -628,6 +701,7 @@ elif can_prompt_interactively; then
     # User specified targeted module(s) via CLI (e.g. insssh, insmobile)
     (( target_ssh_prompt )) && _prompt_ssh_key
     (( target_win_prompt )) && _prompt_win_tools
+    (( target_tz_prompt )) && _prompt_timezone
   else
     _tui_select_many "DOTFILES MODULE SELECTOR" "" selected 1 "${menu_labels[@]}"
 
@@ -636,6 +710,7 @@ elif can_prompt_interactively; then
       (( selected[1] )) && _prompt_ssh_key
       (( selected[2] || selected[3] )) && _prompt_win_tools
     fi
+    _prompt_timezone
   fi
   # Summary and Confirmation
   printf "\n\033[1;36m================ INSTALLATION SUMMARY ================\033[0m\n" >/dev/tty
@@ -699,6 +774,12 @@ elif can_prompt_interactively; then
   else
     printf "   \033[90m[ ] tools     -> Disabled\033[0m\n" >/dev/tty
   fi
+
+  if [[ -n "$tz_val" ]]; then
+    printf "   \033[1;32m[✔] timezone\033[0m  -> %s\n" "$tz_val" >/dev/tty
+  else
+    printf "   \033[90m[ ] timezone  -> System Default (unchanged)\033[0m\n" >/dev/tty
+  fi
   printf "\n" >/dev/tty
 
   if ! prompt_yes_no "Proceed with installation?"; then
@@ -716,6 +797,7 @@ cat > "$DIR/local/local.env.tmp" <<EOF
 export DOTFILES_SSH_INIT="${ssh_init_val}"
 export DOTFILES_WIN_PATH="${win_path_val}"
 export CHROME_EXECUTABLE="${chrome_path_val}"
+$([[ -n "$tz_val" ]] && echo "export TZ=\"${tz_val}\"")
 EOF
 chmod 600 "$DIR/local/local.env.tmp"
 mv "$DIR/local/local.env.tmp" "$DIR/local/local.env"

@@ -422,8 +422,14 @@ _refresh_inventory() {
         inst_date="${minfo%%|*}"
       fi
 
-      # Format ISO timestamp into clean human-readable date: 2026-11-02 01:12 UTC
-      if [[ "$inst_date" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}) ]]; then
+      # Format ISO timestamp into clean human-readable date using active timezone:
+      local formatted_date=""
+      if command -v date >/dev/null 2>&1 && [[ -n "$inst_date" && "$inst_date" != "-" ]]; then
+        formatted_date="$(date -d "$inst_date" +"%Y-%m-%d %H:%M %Z" 2>/dev/null || true)"
+      fi
+      if [[ -n "$formatted_date" ]]; then
+        inst_date="$formatted_date"
+      elif [[ "$inst_date" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}) ]]; then
         inst_date="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} UTC"
       elif [[ "$inst_date" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
         inst_date="${BASH_REMATCH[1]}"

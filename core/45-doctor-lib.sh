@@ -58,6 +58,12 @@ _zen_doctor() {
     ((pass_count++))
   fi
 
+  local tz_abbr="$(date +"%Z" 2>/dev/null || echo "UTC")"
+  local tz_offset="$(date +"%:z" 2>/dev/null || echo "+00:00")"
+  local tz_display="${TZ:-System ($tz_abbr)}"
+  printf "  ${c_green}✔${c_reset} Timezone: %s (%s, UTC%s)\n" "$tz_display" "$tz_abbr" "$tz_offset"
+  ((pass_count++))
+
   # ----------------------------------------------------------------------------
   # [2/5] Shell Profile Integration & Dotfiles Root
   # ----------------------------------------------------------------------------

@@ -171,12 +171,12 @@ _tui_read_key() {
     eval "$_out_var='DOWN'"
   elif [[ "$key" == " " ]]; then
     eval "$_out_var='SPACE'"
-  elif [[ "$key" == "a" || "$key" == "A" ]]; then
-    eval "$_out_var='ALL'"
+  elif [[ "$key" == "A" ]]; then
+    eval "$_out_var='SELECT_ALL'"
+  elif [[ "$key" == "a" || "$key" == "c" || "$key" == "C" ]]; then
+    eval "$_out_var='CLEAR'"
   elif [[ "$key" == "m" || "$key" == "M" ]]; then
     eval "$_out_var='MISSING'"
-  elif [[ "$key" == "c" || "$key" == "C" ]]; then
-    eval "$_out_var='CLEAR'"
   elif [[ "$key" == "i" || "$key" == "I" || "$key" == "+" ]]; then
     eval "$_out_var='INSTALL'"
   elif [[ "$key" == "u" || "$key" == "U" || "$key" == "^" ]]; then

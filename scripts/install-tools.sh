@@ -784,9 +784,10 @@ _action_show_help() {
     "  i, +       Stage tool for INSTALL  [+]"
     "  u, ^       Stage tool for UPDATE   [^]"
     "  d, -       Stage tool for REMOVE   [-]"
-    "  Space      Smart toggle / clear badge"
+    "  Space      Smart toggle focused tool"
+    "  A          Select ALL tools (Stage All)"
+    "  a, c       Deselect ALL (Clear queue)"
     "  m          Stage ALL missing tools [+]"
-    "  a, c       Clear entire staging queue"
     ""
     "Execution & Transactions:"
     "  Enter      Review & Apply transaction"
@@ -979,16 +980,18 @@ _main_tui_loop() {
     (( q_del > 0 )) && q_parts+=("${q_del} del")
     local q_summary="${q_parts[*]}"
     q_summary="${q_summary// /, }"
-    if (( cols >= 68 )); then
-      _tui_draw_footer "QUEUE: $q_summary │ [Enter] Review & Apply │ [a] Clear Queue"
+    if (( cols >= 72 )); then
+      _tui_draw_footer "QUEUE: $q_summary │ [Enter] Review & Apply │ [A] All │ [a] Clear"
     else
-      _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [a] Clear"
+      _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [A] All │ [a] Clear"
     fi
   else
-    if (( cols >= 72 )); then
-      _tui_draw_footer "[↑/↓] Move  [i] Install  [u] Update  [d] Remove  [m] Missing  [?] Help  [q] Quit"
+    if (( cols >= 76 )); then
+      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [A] All  [a] Clear  [?] Help  [q] Quit"
+    elif (( cols >= 62 )); then
+      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [A] All  [a] Clear  [?] Help  [q] Quit"
     else
-      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [m] Miss  [?] Help  [q] Quit"
+      _tui_draw_footer "[↑/↓] Move  [A] All  [a] Clear  [?] Help  [q] Quit"
     fi
   fi
 
@@ -1042,18 +1045,19 @@ _main_tui_loop() {
         fi
       done
       ;;
-    ALL|CLEAR)
-      local any_staged=0
+    SELECT_ALL)
       for ((i=0; i<item_count; i++)); do
-        if (( staged_actions[i] > 0 )); then any_staged=1; break; fi
+        if (( statuses[i] == 0 )); then
+          staged_actions[i]=1
+        else
+          staged_actions[i]=2
+        fi
       done
-      if (( any_staged )); then
-        for ((i=0; i<item_count; i++)); do staged_actions[i]=0; done
-      else
-        for ((i=0; i<item_count; i++)); do
-          if (( statuses[i] == 0 )); then staged_actions[i]=1; fi
-        done
-      fi
+      ;;
+    CLEAR)
+      for ((i=0; i<item_count; i++)); do
+        staged_actions[i]=0
+      done
       ;;
     ENTER)
       _action_review_and_execute

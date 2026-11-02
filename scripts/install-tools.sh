@@ -359,6 +359,9 @@ _refresh_inventory() {
   versions=()
   origins=()
   paths=()
+  apt_candidates=()
+  apt_infos=()
+  manifest_dates=()
 
   local i def cmd apt_pkg gh_repo asset_fmt bin_name desc homepage
   local origin_info origin_label path_val origin_type ver_str cand_str
@@ -379,18 +382,40 @@ _refresh_inventory() {
     origins+=("$origin_label")
     paths+=("$path_val")
 
+    # Pre-cache candidate version and APT info once
+    cand_str="$(_get_apt_candidate "$apt_pkg" || true)"
+    apt_candidates+=("$cand_str")
+
+    local apt_info="Not in current APT repositories"
+    if [[ -n "$cand_str" ]]; then
+      apt_info="Available in APT ($apt_pkg v$cand_str)"
+    elif _is_in_apt "$apt_pkg"; then
+      apt_info="Available in APT ($apt_pkg)"
+    fi
+    apt_infos+=("$apt_info")
+
     if [[ "$origin_label" == "NONE" ]]; then
       statuses+=(0) # Not installed
-      cand_str="$(_get_apt_candidate "$apt_pkg" || true)"
       if [[ -n "$cand_str" ]]; then
         versions+=("($cand_str)")
       else
         versions+=("-")
       fi
+      manifest_dates+=("-")
     else
       statuses+=(1) # Installed
       ver_str="$(_get_tool_version "$cmd")"
       versions+=("${ver_str:--}")
+
+      # Pre-cache manifest installed date once during inventory refresh
+      local inst_date="-"
+      local minfo
+      minfo="$(_manifest_get_tool_info "$cmd" || true)"
+      if [[ -n "$minfo" ]]; then
+        inst_date="${minfo%%|*}"
+      fi
+      manifest_dates+=("$inst_date")
+
       # Auto-sync active installed tool into manifest if manifest exists
       local clean_origin="apt"
       [[ "$origin_label" == *"github"* ]] && clean_origin="github"
@@ -713,8 +738,19 @@ _action_delete() {
 # ==============================================================================
 # LIVE DETAIL PREVIEW PANE (Updates dynamically as cursor scrolls)
 # ==============================================================================
+# MASTER-DETAIL LIVE PREVIEW PANE (Responsive & Zero-Fork)
+# ==============================================================================
 _render_live_detail() {
   local idx="$1"
+  _tui_update_dimensions
+  local cols="${_TUI_COLS:-80}"
+  local lines="${_TUI_LINES:-24}"
+
+  # Omit detail box if vertical space is constrained
+  if (( lines < 16 )); then
+    return 0
+  fi
+
   local c="${cmds[idx]}"
   local d="${descs[idx]}"
   local h="${homepages[idx]}"
@@ -726,57 +762,60 @@ _render_live_detail() {
   local p="${paths[idx]}"
   [[ "$p" == "-" ]] && p="None"
 
-  local apt_cand
-  apt_cand="$(_get_apt_candidate "${apt_pkgs[idx]}" || true)"
-  local apt_info="Not in current APT repositories"
-  if [[ -n "$apt_cand" ]]; then
-    apt_info="Available in APT (${apt_pkgs[idx]} v$apt_cand)"
-  elif _is_in_apt "${apt_pkgs[idx]}"; then
-    apt_info="Available in APT (${apt_pkgs[idx]})"
-  fi
+  # Read pre-cached values without any subshell fork
+  local apt_cand="${apt_candidates[idx]:-None}"
+  local apt_info="${apt_infos[idx]:-Not in current APT repositories}"
+  local inst_date="${manifest_dates[idx]:--}"
 
   local gh_info="None (Native APT)"
   [[ -n "${gh_repos[idx]}" ]] && gh_info="https://github.com/${gh_repos[idx]}"
 
-  local inst_date="-"
-  if (( statuses[idx] == 1 )); then
-    local minfo
-    minfo="$(_manifest_get_tool_info "$c" || true)"
-    if [[ -n "$minfo" ]]; then
-      inst_date="${minfo%%|*}"
-    fi
-  fi
-
-  local width=78
-  local inner_width=$((width - 4))
+  local width=$(( cols - 4 ))
+  (( width > 80 )) && width=80
+  (( width < 36 )) && return 0
+  local inner_width=$(( width - 4 ))
 
   printf "\n" >/dev/tty
   local title_part="┌─[ DETAIL: $c ]"
-  local pad_len=$((width - ${#title_part} - 1))
-  local top_dashes=""
-  for ((d_idx=0; d_idx<pad_len; d_idx++)); do top_dashes="${top_dashes}─"; done
+  local pad_len=$(( width - ${#title_part} - 1 ))
+  (( pad_len < 0 )) && pad_len=0
+  local top_dashes
+  top_dashes="$(_tui_repeat_char "─" "$pad_len")"
   printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
 
-  local lines=(
+  local detail_lines=(
     "Description       : $d"
     "Status            : $s"
     "Installed Version : $v"
     "Available Version : ${apt_cand:-None}"
     "Managed Origin    : $o"
-    "Binary Location   : $p"
-    "Installed Date    : $inst_date"
-    "APT Repository    : $apt_info"
-    "GitHub Upstream   : $gh_info"
-    "Official Homepage : $h"
   )
 
-  for line in "${lines[@]}"; do
-    printf "${_TUI_CYAN}│${_TUI_RESET} %-*.*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$inner_width" "$line" >/dev/tty
+  # Adapt vertical detail density based on available terminal lines
+  if (( lines >= 26 )); then
+    detail_lines+=(
+      "Binary Location   : $p"
+      "Installed Date    : $inst_date"
+      "APT Repository    : $apt_info"
+      "GitHub Upstream   : $gh_info"
+      "Official Homepage : $h"
+    )
+  elif (( lines >= 20 )); then
+    detail_lines+=(
+      "Binary Location   : $p"
+      "Installed Date    : $inst_date"
+    )
+  fi
+
+  for line in "${detail_lines[@]}"; do
+    local trunc_line
+    trunc_line="$(_tui_truncate "$line" "$inner_width")"
+    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_line" >/dev/tty
   done
 
-  local div_dashes=""
-  for ((d_idx=0; d_idx<width-2; d_idx++)); do div_dashes="${div_dashes}─"; done
-  printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$div_dashes" >/dev/tty
+  local bot_dashes
+  bot_dashes="$(_tui_repeat_char "─" "$(( width - 2 ))")"
+  printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$bot_dashes" >/dev/tty
 }
 
 # ==============================================================================
@@ -787,11 +826,22 @@ _tui_enter
 
 while true; do
   _tui_clear
+  _tui_update_dimensions
+  cols="${_TUI_COLS:-80}"
+
   _tui_draw_header "ZENCLI: DEVELOPER TOOLS NOTEBOOK" "Developer Tool Ledger & Provisioning Manager"
 
-  # Table Column Header (Mathematically aligned with row columns)
-  printf "      %-10s %-13s %-10s %-15s %s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" "DESCRIPTION" >/dev/tty
-  printf "      %-10s %-13s %-10s %-15s %s\n" "───────" "──────" "───────" "──────" "───────────" >/dev/tty
+  # Responsive Table Columns based on available width
+  if (( cols >= 85 )); then
+    printf "      %-10s %-13s %-10s %-15s %s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" "DESCRIPTION" >/dev/tty
+    printf "      %-10s %-13s %-10s %-15s %s\n" "───────" "──────" "───────" "──────" "───────────" >/dev/tty
+  elif (( cols >= 62 )); then
+    printf "      %-10s %-13s %-10s %-15s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" >/dev/tty
+    printf "      %-10s %-13s %-10s %-15s\n" "───────" "──────" "───────" "──────" >/dev/tty
+  else
+    printf "      %-8s %-11s %-8s\n" "COMMAND" "STATUS" "VER" >/dev/tty
+    printf "      %-8s %-11s %-8s\n" "───────" "──────" "───" >/dev/tty
+  fi
 
   # Render Rows
   for ((i=0; i<item_count; i++)); do
@@ -800,8 +850,10 @@ while true; do
 
     if (( statuses[i] )); then
       status_disp="${_TUI_GREEN}Installed    ${_TUI_RESET}"
+      status_short="${_TUI_GREEN}Inst ${_TUI_RESET}"
     else
       status_disp="${_TUI_GRAY}Not Installed${_TUI_RESET}"
+      status_short="${_TUI_GRAY}None ${_TUI_RESET}"
     fi
 
     ver_disp="${versions[i]}"
@@ -813,8 +865,18 @@ while true; do
       prefix="${_TUI_GREEN}${_TUI_BOLD}> ${_TUI_RESET}"
     fi
 
-    printf "%b[%s] %-10s %b %-10s %-15s %s\n" \
-      "$prefix" "$mark" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" "${descs[i]}" >/dev/tty
+    if (( cols >= 85 )); then
+      desc_avail=$(( cols - 58 ))
+      desc_trunc="$(_tui_truncate "${descs[i]}" "$desc_avail")"
+      printf "%b[%s] %-10s %b %-10s %-15s %s\n" \
+        "$prefix" "$mark" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" "$desc_trunc" >/dev/tty
+    elif (( cols >= 62 )); then
+      printf "%b[%s] %-10s %b %-10s %-15s\n" \
+        "$prefix" "$mark" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" >/dev/tty
+    else
+      printf "%b[%s] %-8s %b %-8s\n" \
+        "$prefix" "$mark" "${cmds[i]:0:8}" "$status_short" "${ver_disp:0:8}" >/dev/tty
+    fi
   done
 
   # Render Live Master-Detail Preview Pane for Currently Focused Tool
@@ -826,6 +888,9 @@ while true; do
   _tui_read_key action
 
   case "$action" in
+    REDRAW)
+      continue
+      ;;
     UP)
       if (( cursor > 0 )); then cursor=$((cursor - 1)); else cursor=$((item_count - 1)); fi
       ;;

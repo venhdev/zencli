@@ -894,9 +894,11 @@ _render_live_detail() {
 # MAIN TUI INTERACTIVE LOOP
 # ==============================================================================
 cursor=0
-_tui_enter
 
-while true; do
+_main_tui_loop() {
+  _tui_enter
+
+  while true; do
   _tui_clear
   _tui_update_dimensions
   cols="${_TUI_COLS:-80}"
@@ -1065,5 +1067,8 @@ while true; do
   esac
 done
 
-_tui_exit
-printf "\nClosed ZenCLI Tools Notebook.\n"
+  _tui_exit
+  printf "\nClosed ZenCLI Tools Notebook.\n"
+}
+
+_main_tui_loop

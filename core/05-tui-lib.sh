@@ -173,11 +173,15 @@ _tui_read_key() {
     eval "$_out_var='SPACE'"
   elif [[ "$key" == "a" || "$key" == "A" ]]; then
     eval "$_out_var='ALL'"
-  elif [[ "$key" == "i" || "$key" == "I" ]]; then
+  elif [[ "$key" == "m" || "$key" == "M" ]]; then
+    eval "$_out_var='MISSING'"
+  elif [[ "$key" == "c" || "$key" == "C" ]]; then
+    eval "$_out_var='CLEAR'"
+  elif [[ "$key" == "i" || "$key" == "I" || "$key" == "+" ]]; then
     eval "$_out_var='INSTALL'"
-  elif [[ "$key" == "u" || "$key" == "U" ]]; then
+  elif [[ "$key" == "u" || "$key" == "U" || "$key" == "^" ]]; then
     eval "$_out_var='UPDATE'"
-  elif [[ "$key" == "d" || "$key" == "D" ]]; then
+  elif [[ "$key" == "d" || "$key" == "D" || "$key" == "-" ]]; then
     eval "$_out_var='DELETE'"
   elif [[ "$key" == "?" || "$key" == "o" || "$key" == "O" || "$key" == "h" || "$key" == "H" ]]; then
     eval "$_out_var='INFO'"
@@ -270,6 +274,53 @@ _tui_modal_box() {
   if [[ "$dummy" == $'\x1b' ]]; then
     read -rsn2 -t 0.1 dummy < /dev/tty 2>/dev/null || true
   fi
+}
+
+# Render Modal Confirmation Dialog Box (returns 0 on Y/Enter, 1 on N/Esc/q)
+_tui_modal_confirm() {
+  local title="$1"
+  local -n _lines="$2"
+  local prompt_hint="${3:-[Y/Enter] Proceed   [n/Esc/q] Cancel}"
+  _tui_update_dimensions
+  local width=$(( _TUI_COLS - 4 ))
+  (( width > 80 )) && width=80
+  (( width < 36 )) && width=36
+  local inner_width=$((width - 4))
+
+  _tui_clear
+
+  local title_part="┌─[ $title ]"
+  local pad_len=$((width - ${#title_part} - 1))
+  (( pad_len < 0 )) && pad_len=0
+  local top_dashes
+  top_dashes="$(_tui_repeat_char "─" "$pad_len")"
+  printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
+
+  local line
+  for line in "${_lines[@]}"; do
+    local trunc_line
+    trunc_line="$(_tui_truncate "$line" "$inner_width")"
+    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_line" >/dev/tty
+  done
+
+  local div_dashes
+  div_dashes="$(_tui_repeat_char "─" "$((width - 2))")"
+  printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$div_dashes" >/dev/tty
+  local trunc_hint
+  trunc_hint="$(_tui_truncate "  $prompt_hint" "$inner_width")"
+  printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_BOLD}%-*s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_hint" >/dev/tty
+  printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$div_dashes" >/dev/tty
+
+  local dummy=""
+  IFS= read -rsn1 dummy < /dev/tty 2>/dev/null || return 1
+  if [[ "$dummy" == $'\x1b' ]]; then
+    read -rsn2 -t 0.1 dummy < /dev/tty 2>/dev/null || true
+    return 1
+  fi
+  case "$dummy" in
+    [Yy]|""|$'\r'|$'\n') return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Prompt user for confirmation with safe temporary cooked terminal

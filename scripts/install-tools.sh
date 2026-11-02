@@ -344,7 +344,7 @@ statuses=()
 versions=()
 origins=()
 paths=()
-selected=()
+staged_actions=()
 
 _refresh_inventory() {
   cmds=()
@@ -422,9 +422,9 @@ _refresh_inventory() {
       _manifest_sync_tool "$cmd" "$clean_origin" "$apt_pkg" "${ver_str:--}" "$path_val" "$gh_repo"
     fi
 
-    # Maintain existing selection or default to unselected
-    if [[ -z "${selected[i]:-}" ]]; then
-      selected+=(0)
+    # Maintain existing staged action or default to 0 (None)
+    if [[ -z "${staged_actions[i]:-}" ]]; then
+      staged_actions+=(0)
     fi
   done
 }
@@ -572,96 +572,165 @@ _install_from_github() {
   printf "${_TUI_GREEN}${_TUI_BOLD}✔ Successfully installed %s v%s to %s/%s${_TUI_RESET}\n" "$cmd" "$ver" "$target_dir" "$cmd" >/dev/tty
 }
 
-_action_install() {
-  local target_indices=()
+# ==============================================================================
+# BATCH TRANSACTION MANAGER & SUDO PRE-WARMING
+# ==============================================================================
+_action_review_and_execute() {
+  local apt_install=()
+  local apt_install_indices=()
+  local apt_update=()
+  local apt_update_indices=()
+  local apt_remove=()
+  local apt_remove_indices=()
+
+  local gh_install=()
+  local gh_install_indices=()
+  local gh_update=()
+  local gh_update_indices=()
+  local gh_remove=()
+  local gh_remove_indices=()
+
+  local total_staged=0
+
   for ((i=0; i<item_count; i++)); do
-    (( selected[i] )) && target_indices+=("$i")
-  done
+    local action="${staged_actions[i]:-0}"
+    (( action == 0 )) && continue
+    (( ++total_staged ))
 
-  if (( ${#target_indices[@]} == 0 )); then
-    target_indices+=("$cursor")
-  fi
+    local c="${cmds[i]}"
+    local pkg="${apt_pkgs[i]}"
+    local repo="${gh_repos[i]}"
+    local orig="${origins[i]}"
 
-  local apt_queue=()
-  local gh_queue=()
-
-  for idx in "${target_indices[@]}"; do
-    local c="${cmds[idx]}"
-    local pkg="${apt_pkgs[idx]}"
-    local repo="${gh_repos[idx]}"
-
-    if _is_in_apt "$pkg"; then
-      apt_queue+=("$pkg")
-    elif [[ -n "$repo" ]]; then
-      gh_queue+=("$idx")
-    else
-      printf "${_TUI_RED}Package '%s' is not in APT and has no GitHub release source.${_TUI_RESET}\n" "$c" >/dev/tty
-    fi
-  done
-
-  _tui_exit
-
-  # 1. Standard APT flow (prompts sudo password naturally)
-  if (( ${#apt_queue[@]} > 0 )); then
-    printf "\n${_TUI_CYAN}${_TUI_BOLD}=== SYSTEM APT INSTALLATION ===${_TUI_RESET}\n"
-    printf "Packages to install via APT: ${_TUI_GREEN}%s${_TUI_RESET}\n\n" "${apt_queue[*]}"
-    if _tui_confirm_prompt "Proceed with 'sudo apt update && sudo apt install'?" "Y"; then
-      sudo apt update && sudo apt install -y "${apt_queue[@]}"
-      for idx in "${target_indices[@]}"; do
-        local c="${cmds[idx]}"
-        local pkg="${apt_pkgs[idx]}"
-        if _is_in_apt "$pkg" && command -v "$c" >/dev/null 2>&1; then
-          _manifest_sync_tool "$c" "apt" "$pkg" "$(_get_tool_version "$c")" "$(command -v "$c")" "${gh_repos[idx]}"
+    case "$action" in
+      1) # INSTALL
+        if _is_in_apt "$pkg"; then
+          apt_install+=("$pkg")
+          apt_install_indices+=("$i")
+        elif [[ -n "$repo" ]]; then
+          gh_install+=("$c")
+          gh_install_indices+=("$i")
         fi
-      done
-    fi
-  fi
-
-  # 2. Explicit Opt-in GitHub Binary Flow
-  if (( ${#gh_queue[@]} > 0 )); then
-    for g_idx in "${gh_queue[@]}"; do
-      _install_from_github "${cmds[g_idx]}" "${gh_repos[g_idx]}" "${asset_fmts[g_idx]}" "${bin_names[g_idx]}" "${descs[g_idx]}"
-    done
-  fi
-
-  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
-  read -r _ </dev/tty || true
-  _tui_enter
-}
-
-_action_update() {
-  local target_indices=()
-  for ((i=0; i<item_count; i++)); do
-    (( selected[i] )) && target_indices+=("$i")
+        ;;
+      2) # UPDATE
+        if [[ "$orig" == *"apt"* ]] || _is_in_apt "$pkg"; then
+          apt_update+=("$pkg")
+          apt_update_indices+=("$i")
+        elif [[ "$orig" == *"github"* && -n "$repo" ]]; then
+          gh_update+=("$c")
+          gh_update_indices+=("$i")
+        fi
+        ;;
+      3) # REMOVE
+        if [[ "$orig" == *"apt"* ]]; then
+          apt_remove+=("$pkg")
+          apt_remove_indices+=("$i")
+        elif [[ "$orig" == *"github"* || "${paths[i]}" == "$HOME/.local/bin/"* ]]; then
+          gh_remove+=("$c")
+          gh_remove_indices+=("$i")
+        fi
+        ;;
+    esac
   done
 
-  if (( ${#target_indices[@]} == 0 )); then
-    target_indices+=("$cursor")
-  fi
-
-  _tui_exit
-  local apt_updates=()
-
-  for idx in "${target_indices[@]}"; do
-    if (( statuses[idx] == 0 )); then
-      printf "${_TUI_YELLOW}Skipping '%s' (not currently installed).${_TUI_RESET}\n" "${cmds[idx]}"
-      continue
-    fi
-
-    local orig="${origins[idx]}"
-    if [[ "$orig" == *"apt"* ]]; then
-      apt_updates+=("${apt_pkgs[idx]}")
-    elif [[ "$orig" == *"github"* && -n "${gh_repos[idx]}" ]]; then
-      _install_from_github "${cmds[idx]}" "${gh_repos[idx]}" "${asset_fmts[idx]}" "${bin_names[idx]}" "${descs[idx]}"
+  # If queue is empty, trigger smart action for cursor tool
+  if (( total_staged == 0 )); then
+    if (( statuses[cursor] == 0 )); then
+      staged_actions[cursor]=1
+      if _is_in_apt "${apt_pkgs[cursor]}"; then
+        apt_install+=("${apt_pkgs[cursor]}")
+        apt_install_indices+=("$cursor")
+      elif [[ -n "${gh_repos[cursor]}" ]]; then
+        gh_install+=("${cmds[cursor]}")
+        gh_install_indices+=("$cursor")
+      fi
+      total_staged=1
     else
-      printf "Tool '%s' origin '%s' does not support automated updates.\n" "${cmds[idx]}" "$orig"
+      staged_actions[cursor]=2
+      if [[ "${origins[cursor]}" == *"apt"* ]] || _is_in_apt "${apt_pkgs[cursor]}"; then
+        apt_update+=("${apt_pkgs[cursor]}")
+        apt_update_indices+=("$cursor")
+      elif [[ -n "${gh_repos[cursor]}" ]]; then
+        gh_update+=("${cmds[cursor]}")
+        gh_update_indices+=("$cursor")
+      fi
+      total_staged=1
     fi
-  done
+  fi
 
-  if (( ${#apt_updates[@]} > 0 )); then
-    printf "\n==> Updating APT packages: %s...\n" "${apt_updates[*]}"
-    sudo apt update && sudo apt --only-upgrade install -y "${apt_updates[@]}"
-    for idx in "${target_indices[@]}"; do
+  local total_apt=$(( ${#apt_install[@]} + ${#apt_update[@]} + ${#apt_remove[@]} ))
+  local total_gh=$(( ${#gh_install[@]} + ${#gh_update[@]} + ${#gh_remove[@]} ))
+
+  # Build Review Modal summary lines
+  local review_lines=(
+    "TRANSACTION REVIEW: Staged operations to apply"
+    ""
+  )
+
+  if (( ${#apt_install[@]} > 0 || ${#gh_install[@]} > 0 )); then
+    local ins_list=("${apt_install[@]}" "${gh_install[@]}")
+    review_lines+=("  [+ INSTALL] (${#ins_list[@]}): ${ins_list[*]}")
+  fi
+
+  if (( ${#apt_update[@]} > 0 || ${#gh_update[@]} > 0 )); then
+    local upd_list=("${apt_update[@]}" "${gh_update[@]}")
+    review_lines+=("  [^ UPDATE ] (${#upd_list[@]}): ${upd_list[*]}")
+  fi
+
+  if (( ${#apt_remove[@]} > 0 || ${#gh_remove[@]} > 0 )); then
+    local rem_list=("${apt_remove[@]}" "${gh_remove[@]}")
+    review_lines+=("  [- REMOVE ] (${#rem_list[@]}): ${rem_list[*]}")
+  fi
+
+  review_lines+=(
+    ""
+    "Privilege Execution Plan:"
+  )
+  if (( total_apt > 0 )); then
+    review_lines+=(
+      "  • System APT ($total_apt pkgs): Requires sudo"
+      "    (Password authenticated once up front)"
+    )
+  fi
+  if (( total_gh > 0 )); then
+    review_lines+=(
+      "  • User Binaries ($total_gh pkgs): ~/.local/bin (no sudo)"
+    )
+  fi
+
+  review_lines+=(
+    ""
+    "Apply this transaction queue now?"
+  )
+
+  # Present Review Sheet Modal
+  if ! _tui_modal_confirm "CONFIRM TRANSACTION" review_lines "[Y/Enter] Execute queue   [n/Esc/q] Return to edit"; then
+    return 0
+  fi
+
+  # Execution Phase
+  _tui_exit
+
+  printf "\n${_TUI_CYAN}${_TUI_BOLD}=== ZENCLI BATCH TRANSACTION EXECUTION ===${_TUI_RESET}\n"
+
+  # 1. Sudo Pre-warming if APT operations exist
+  if (( total_apt > 0 )); then
+    printf "\n${_TUI_CYAN}==> Pre-authenticating sudo credentials for APT operations...${_TUI_RESET}\n"
+    if ! sudo -v; then
+      printf "${_TUI_RED}Error: Sudo authentication failed. Transaction aborted.${_TUI_RESET}\n"
+      printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
+      read -r _ </dev/tty || true
+      _tui_enter
+      return 1
+    fi
+  fi
+
+  # 2. Atomic APT Update & Install / Upgrade
+  local apt_ops=("${apt_install[@]}" "${apt_update[@]}")
+  if (( ${#apt_ops[@]} > 0 )); then
+    printf "\n${_TUI_CYAN}==> Updating APT cache & installing/upgrading: %s...${_TUI_RESET}\n" "${apt_ops[*]}"
+    sudo apt update && sudo apt install -y "${apt_ops[@]}"
+    for idx in "${apt_install_indices[@]}" "${apt_update_indices[@]}"; do
       local c="${cmds[idx]}"
       local pkg="${apt_pkgs[idx]}"
       if command -v "$c" >/dev/null 2>&1; then
@@ -670,68 +739,39 @@ _action_update() {
     done
   fi
 
-  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
-  read -r _ </dev/tty || true
-  _tui_enter
-}
+  # 3. Atomic APT Removal
+  if (( ${#apt_remove[@]} > 0 )); then
+    printf "\n${_TUI_YELLOW}==> Removing APT packages: %s...${_TUI_RESET}\n" "${apt_remove[*]}"
+    sudo apt remove -y "${apt_remove[@]}"
+    for idx in "${apt_remove_indices[@]}"; do
+      local c="${cmds[idx]}"
+      _manifest_remove_tool "$c"
+    done
+  fi
 
-_action_delete() {
-  local target_indices=()
+  # 4. GitHub Release Installs & Updates (Zero Sudo)
+  for g_idx in "${gh_install_indices[@]}" "${gh_update_indices[@]}"; do
+    _install_from_github "${cmds[g_idx]}" "${gh_repos[g_idx]}" "${asset_fmts[g_idx]}" "${bin_names[g_idx]}" "${descs[g_idx]}"
+  done
+
+  # 5. GitHub User Binary Removal (Zero Sudo)
+  for g_idx in "${gh_remove_indices[@]}"; do
+    local p="${paths[g_idx]}"
+    local c="${cmds[g_idx]}"
+    rm -f "$p"
+    printf "${_TUI_GREEN}✔ Removed user binary: %s${_TUI_RESET}\n" "$p"
+    _manifest_remove_tool "$c"
+  done
+
+  # Reset all staged actions upon completion
   for ((i=0; i<item_count; i++)); do
-    (( selected[i] )) && target_indices+=("$i")
+    staged_actions[i]=0
   done
 
-  if (( ${#target_indices[@]} == 0 )); then
-    target_indices+=("$cursor")
-  fi
-
-  local to_delete=()
-  for idx in "${target_indices[@]}"; do
-    (( statuses[idx] == 1 )) && to_delete+=("$idx")
-  done
-
-  if (( ${#to_delete[@]} == 0 )); then
-    _tui_exit
-    printf "\n${_TUI_YELLOW}No installed tools selected for removal.${_TUI_RESET}\n"
-    sleep 1.2
-    _tui_enter
-    return 0
-  fi
-
-  _tui_exit
-  local delete_names=()
-  for idx in "${to_delete[@]}"; do delete_names+=("${cmds[idx]}"); done
-
-  printf "\n${_TUI_RED}${_TUI_BOLD}=== CONFIRM REMOVAL ===${_TUI_RESET}\n"
-  printf "The following tools will be uninstalled: ${_TUI_YELLOW}%s${_TUI_RESET}\n" "${delete_names[*]}"
-
-  if ! _tui_confirm_prompt "Are you sure you want to proceed?" "N"; then
-    printf "Removal cancelled.\n"
-    sleep 1
-    _tui_enter
-    return 0
-  fi
-
-  for idx in "${to_delete[@]}"; do
-    local c="${cmds[idx]}"
-    local orig="${origins[idx]}"
-    local p="${paths[idx]}"
-    local pkg="${apt_pkgs[idx]}"
-
-    if [[ "$orig" == *"github"* || "$p" == "$HOME/.local/bin/"* ]]; then
-      rm -f "$p"
-      printf "${_TUI_GREEN}✔ Removed user binary: %s${_TUI_RESET}\n" "$p"
-      _manifest_remove_tool "$c"
-    elif [[ "$orig" == *"apt"* ]]; then
-      sudo apt remove -y "$pkg"
-      _manifest_remove_tool "$c"
-    else
-      printf "${_TUI_YELLOW}Skipping '%s': unable to auto-remove origin '%s'.${_TUI_RESET}\n" "$c" "$orig"
-    fi
-  done
-
+  printf "\n${_TUI_GREEN}${_TUI_BOLD}✔ Transaction applied successfully.${_TUI_RESET}\n"
   printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Notebook...${_TUI_RESET}"
   read -r _ </dev/tty || true
+  _refresh_inventory
   _tui_enter
 }
 
@@ -740,19 +780,21 @@ _action_show_help() {
   local help_lines=(
     "ZENCLI DEVELOPER TOOLS NOTEBOOK"
     ""
-    "Navigation:"
-    "  ↑/↓, k/j   Navigate tools"
+    "Staging & Queue Keybindings:"
+    "  i, +       Stage tool for INSTALL  [+]"
+    "  u, ^       Stage tool for UPDATE   [^]"
+    "  d, -       Stage tool for REMOVE   [-]"
+    "  Space      Smart toggle / clear badge"
+    "  m          Stage ALL missing tools [+]"
+    "  a, c       Clear entire staging queue"
     ""
-    "Selection:"
-    "  Space      Toggle selection"
-    "  a          Select / deselect all"
+    "Execution & Transactions:"
+    "  Enter      Review & Apply transaction"
+    "             (Combines APT & GitHub into"
+    "              a single atomic batch)"
     ""
-    "Actions:"
-    "  i, Enter   Install selected (or focused)"
-    "  u          Update selected to latest"
-    "  d          Remove / uninstall tool"
-    ""
-    "General:"
+    "Navigation & General:"
+    "  ↑/↓, k/j   Navigate tools catalog"
     "  ?, h       Show this help dialog"
     "  q, Esc     Quit notebook"
   )
@@ -805,9 +847,17 @@ _render_live_detail() {
   top_dashes="$(_tui_repeat_char "─" "$pad_len")"
   printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
 
+  local action_badge="None [ ]"
+  case "${staged_actions[idx]:-0}" in
+    1) action_badge="[+] INSTALL" ;;
+    2) action_badge="[^] UPDATE" ;;
+    3) action_badge="[-] REMOVE" ;;
+  esac
+
   local detail_lines=(
     "Description       : $d"
     "Status            : $s"
+    "Staged Intent     : $action_badge"
     "Installed Version : $v"
     "Available Version : ${apt_cand:-None}"
     "Managed Origin    : $o"
@@ -861,14 +911,19 @@ while true; do
     printf "      %-10s %-13s %-10s %-15s\n" "COMMAND" "STATUS" "VERSION" "ORIGIN" >/dev/tty
     printf "      ───────    ───────────── ───────    ──────\n" >/dev/tty
   else
-    printf "      %-8s %-6s %-8s\n" "COMMAND" "STATUS" "VER" >/dev/tty
-    printf "      ───────  ────── ───\n" >/dev/tty
+    printf "      %-7s   %-6s   %s\n" "COMMAND" "STATUS" "VER" >/dev/tty
+    printf "      ───────   ──────   ───\n" >/dev/tty
   fi
 
   # Render Rows
   for ((i=0; i<item_count; i++)); do
-    mark=" "
-    (( selected[i] )) && mark="x"
+    local badge
+    case "${staged_actions[i]:-0}" in
+      1) badge="${_TUI_GREEN}[+]${_TUI_RESET}" ;;
+      2) badge="${_TUI_CYAN}[^]${_TUI_RESET}" ;;
+      3) badge="${_TUI_RED}[-]${_TUI_RESET}" ;;
+      *) badge="${_TUI_GRAY}[ ]${_TUI_RESET}" ;;
+    esac
 
     if (( statuses[i] )); then
       status_disp="${_TUI_GREEN}Installed    ${_TUI_RESET}"
@@ -890,21 +945,50 @@ while true; do
     if (( cols >= 85 )); then
       desc_avail=$(( cols - 58 ))
       desc_trunc="$(_tui_truncate "${descs[i]}" "$desc_avail")"
-      printf "%b[%s] %-10s %b %-10s %-15s %s\n" \
-        "$prefix" "$mark" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" "$desc_trunc" >/dev/tty
+      printf "%b%b %-10s %b %-10s %-15s %s\n" \
+        "$prefix" "$badge" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" "$desc_trunc" >/dev/tty
     elif (( cols >= 62 )); then
-      printf "%b[%s] %-10s %b %-10s %-15s\n" \
-        "$prefix" "$mark" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" >/dev/tty
+      printf "%b%b %-10s %b %-10s %-15s\n" \
+        "$prefix" "$badge" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" >/dev/tty
     else
-      printf "%b[%s] %-8s %b %-8s\n" \
-        "$prefix" "$mark" "${cmds[i]:0:8}" "$status_short" "${ver_disp:0:8}" >/dev/tty
+      printf "%b%b %-7s   %b   %s\n" \
+        "$prefix" "$badge" "${cmds[i]:0:7}" "$status_short" "${ver_disp:0:8}" >/dev/tty
     fi
   done
 
   # Render Live Master-Detail Preview Pane for Currently Focused Tool
   _render_live_detail "$cursor"
 
-  _tui_draw_footer
+  # Dynamic Footer with Queue Status
+  local q_ins=0 q_upd=0 q_del=0
+  for ((i=0; i<item_count; i++)); do
+    case "${staged_actions[i]:-0}" in
+      1) (( ++q_ins )) ;;
+      2) (( ++q_upd )) ;;
+      3) (( ++q_del )) ;;
+    esac
+  done
+  local q_tot=$(( q_ins + q_upd + q_del ))
+
+  if (( q_tot > 0 )); then
+    local q_parts=()
+    (( q_ins > 0 )) && q_parts+=("${q_ins} ins")
+    (( q_upd > 0 )) && q_parts+=("${q_upd} upd")
+    (( q_del > 0 )) && q_parts+=("${q_del} del")
+    local q_summary="${q_parts[*]}"
+    q_summary="${q_summary// /, }"
+    if (( cols >= 68 )); then
+      _tui_draw_footer "QUEUE: $q_summary │ [Enter] Review & Apply │ [a] Clear Queue"
+    else
+      _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [a] Clear"
+    fi
+  else
+    if (( cols >= 72 )); then
+      _tui_draw_footer "[↑/↓] Move  [i] Install  [u] Update  [d] Remove  [m] Missing  [?] Help  [q] Quit"
+    else
+      _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [m] Miss  [?] Help  [q] Quit"
+    fi
+  fi
 
   action=""
   _tui_read_key action
@@ -920,28 +1004,57 @@ while true; do
       if (( cursor < item_count - 1 )); then cursor=$((cursor + 1)); else cursor=0; fi
       ;;
     SPACE)
-      selected[cursor]=$(( 1 - selected[cursor] ))
+      if (( staged_actions[cursor] > 0 )); then
+        staged_actions[cursor]=0
+      else
+        if (( statuses[cursor] == 0 )); then
+          staged_actions[cursor]=1
+        else
+          staged_actions[cursor]=2
+        fi
+      fi
       ;;
-    ALL)
-      all_on=1
-      for ((i=0; i<item_count; i++)); do
-        (( selected[i] == 0 )) && { all_on=0; break; }
-      done
-      for ((i=0; i<item_count; i++)); do
-        selected[i]=$(( 1 - all_on ))
-      done
-      ;;
-    INSTALL|ENTER)
-      _action_install
-      _refresh_inventory
+    INSTALL)
+      if (( statuses[cursor] == 0 )); then
+        staged_actions[cursor]=1
+      else
+        staged_actions[cursor]=2
+      fi
       ;;
     UPDATE)
-      _action_update
-      _refresh_inventory
+      if (( statuses[cursor] == 1 )); then
+        staged_actions[cursor]=2
+      else
+        staged_actions[cursor]=1
+      fi
       ;;
     DELETE)
-      _action_delete
-      _refresh_inventory
+      if (( statuses[cursor] == 1 )); then
+        staged_actions[cursor]=3
+      fi
+      ;;
+    MISSING)
+      for ((i=0; i<item_count; i++)); do
+        if (( statuses[i] == 0 )); then
+          staged_actions[i]=1
+        fi
+      done
+      ;;
+    ALL|CLEAR)
+      local any_staged=0
+      for ((i=0; i<item_count; i++)); do
+        if (( staged_actions[i] > 0 )); then any_staged=1; break; fi
+      done
+      if (( any_staged )); then
+        for ((i=0; i<item_count; i++)); do staged_actions[i]=0; done
+      else
+        for ((i=0; i<item_count; i++)); do
+          if (( statuses[i] == 0 )); then staged_actions[i]=1; fi
+        done
+      fi
+      ;;
+    ENTER)
+      _action_review_and_execute
       ;;
     INFO)
       _action_show_help

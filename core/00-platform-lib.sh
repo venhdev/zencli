@@ -174,6 +174,18 @@ _ZEN_APP_DISPLAY="ZenCLI"
 
 # Dynamic Root Directory Resolver
 _get_zen_root() {
+  if [[ -n "${ZENCLI_ROOT:-}" && -d "$ZENCLI_ROOT" ]]; then
+    echo "$ZENCLI_ROOT"
+    return
+  fi
+  if [[ -n "${ZENCLI_DIR:-}" && -d "$ZENCLI_DIR" ]]; then
+    echo "$ZENCLI_DIR"
+    return
+  fi
+  if [[ -n "${ZENCLI:-}" && -d "$ZENCLI" ]]; then
+    echo "$ZENCLI"
+    return
+  fi
   if [[ -n "${ZEN_ROOT:-}" && -d "$ZEN_ROOT" ]]; then
     echo "$ZEN_ROOT"
     return
@@ -200,6 +212,11 @@ _get_zen_root() {
     (cd "$self_dir/.." && pwd)
     return
   fi
+  local xdg_zencli="${XDG_CONFIG_HOME:-$HOME/.config}/zencli"
+  if [[ -d "$xdg_zencli" ]]; then
+    echo "$xdg_zencli"
+    return
+  fi
   local xdg_zen="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
   if [[ -d "$xdg_zen" ]]; then
     echo "$xdg_zen"
@@ -210,7 +227,7 @@ _get_zen_root() {
     echo "$xdg_dotfiles"
     return
   fi
-  echo "${XDG_CONFIG_HOME:-$HOME/.config}/zen"
+  echo "${XDG_CONFIG_HOME:-$HOME/.config}/zencli"
 }
 
 # Backward compatibility alias for dotfiles root
@@ -220,7 +237,7 @@ _get_dotfiles_root() {
 
 # Dynamic State Directory Resolver
 _get_zen_state_dir() {
-  echo "${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+  echo "${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
 }
 
 # Dynamic Command Log File Resolver
@@ -236,6 +253,7 @@ _get_manifest_path() {
     "${ZEN_MANIFEST:-}"
     "$root/.installed.json"
     "$(_get_zen_state_dir)/.installed.json"
+    "${XDG_CONFIG_HOME:-$HOME/.config}/zencli/.installed.json"
     "${XDG_CONFIG_HOME:-$HOME/.config}/zen/.installed.json"
     "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.installed.json"
   )
@@ -285,32 +303,73 @@ EOF
     esac
   done
 
-  local legacy_state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
   local target_state="$(_get_zen_state_dir)"
-  local legacy_config="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
   local target_config="$(_get_zen_root)"
+
+  # Canonical target paths (default to ~/.config/zencli and ~/.local/state/zencli)
+  local canonical_config="${XDG_CONFIG_HOME:-$HOME/.config}/zencli"
+  local canonical_state="${XDG_STATE_HOME:-$HOME/.local/state}/zencli"
+
+  local dest_config="$target_config"
+  if [[ "$dest_config" == "${XDG_CONFIG_HOME:-$HOME/.config}/zen" || "$dest_config" != "${XDG_CONFIG_HOME:-$HOME/.config}"/* ]]; then
+    dest_config="$canonical_config"
+  fi
+  local dest_state="$target_state"
+  if [[ "$dest_state" == "${XDG_STATE_HOME:-$HOME/.local/state}/zen" || "$dest_state" != "${XDG_STATE_HOME:-$HOME/.local/state}"/* ]]; then
+    dest_state="$canonical_state"
+  fi
 
   local pending=0
 
-  # Check MIG-001: Legacy State Directory
-  local mig_state_pending=0
-  if [[ -d "$legacy_state" ]]; then
-    mig_state_pending=1
-    ((pending++))
-  fi
+  # Check MIG-001: Legacy State Directories
+  local mig_states=()
+  for s in "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" "${XDG_STATE_HOME:-$HOME/.local/state}/zen"; do
+    if [[ -d "$s" && "$s" != "$dest_state" ]]; then
+      mig_states+=("$s")
+      ((pending++))
+    fi
+  done
 
-  # Check MIG-002: Legacy Config Directory
-  local mig_config_pending=0
-  if [[ -d "$legacy_config" && "$legacy_config" != "$target_config" ]]; then
-    mig_config_pending=1
-    ((pending++))
-  fi
+  # Check MIG-002: Legacy Config Directories
+  local mig_configs=()
+  for c in "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles" "${XDG_CONFIG_HOME:-$HOME/.config}/zen"; do
+    if [[ -d "$c" && "$c" != "$dest_config" ]]; then
+      mig_configs+=("$c")
+      ((pending++))
+    fi
+  done
 
   # Check MIG-003: Git config reference
   local mig_git_pending=0
   if command -v git >/dev/null 2>&1 && [[ -f "$HOME/.gitconfig" ]]; then
-    if git config --global --get-all include.path 2>/dev/null | grep -qE 'dotfiles/\.gitconfig'; then
+    local current_git_includes
+    current_git_includes="$(git config --global --get-all include.path 2>/dev/null || true)"
+    if echo "$current_git_includes" | grep -qE '(zen|dotfiles)/\.gitconfig' && ! echo "$current_git_includes" | grep -Fxq "$dest_config/.gitconfig"; then
       mig_git_pending=1
+      ((pending++))
+    fi
+  fi
+
+  # Check MIG-004: Shell profile hooks
+  local mig_hooks=()
+  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [[ -f "$rc" ]]; then
+      if grep -qE '(# Load (dotfiles|zen|Zen)\b|/(dotfiles|zen)/core|/(dotfiles|zen)/local)' "$rc" 2>/dev/null; then
+        if ! grep -qE "(\"|\')$dest_config(\"|\')" "$rc" 2>/dev/null; then
+          mig_hooks+=("$rc")
+          ((pending++))
+        fi
+      fi
+    fi
+  done
+
+  # Check MIG-005: Managed symlinks (e.g. ~/.tmux.conf)
+  local mig_symlinks=()
+  if [[ -L "$HOME/.tmux.conf" ]]; then
+    local tmux_target
+    tmux_target="$(readlink -f "$HOME/.tmux.conf" 2>/dev/null || true)"
+    if [[ "$tmux_target" == *"/dotfiles/tmux/"* || "$tmux_target" == *"/zen/tmux/"* ]] && [[ "$tmux_target" != *"/zencli/tmux/"* ]]; then
+      mig_symlinks+=("$HOME/.tmux.conf")
       ((pending++))
     fi
   fi
@@ -322,9 +381,19 @@ EOF
       return 0
     fi
     echo "Pending migrations ($pending):"
-    (( mig_state_pending )) && echo "  • [MIG-001] Legacy state directory present: $legacy_state -> $target_state"
-    (( mig_config_pending )) && echo "  • [MIG-002] Legacy config directory present: $legacy_config -> $target_config"
-    (( mig_git_pending )) && echo "  • [MIG-003] Legacy git config include detected in ~/.gitconfig"
+    for s in "${mig_states[@]}"; do
+      echo "  • [MIG-001] Legacy state directory present: $s -> $dest_state"
+    done
+    for c in "${mig_configs[@]}"; do
+      echo "  • [MIG-002] Legacy config directory present: $c -> $dest_config"
+    done
+    (( mig_git_pending )) && echo "  • [MIG-003] Legacy git config include detected in ~/.gitconfig -> $dest_config/.gitconfig"
+    for h in "${mig_hooks[@]}"; do
+      echo "  • [MIG-004] Legacy shell profile hook detected in: $h -> $dest_config"
+    done
+    for l in "${mig_symlinks[@]}"; do
+      echo "  • [MIG-005] Legacy managed symlink detected: $l -> $dest_config/tmux/.tmux.conf"
+    done
     echo
     echo "Run 'zencli migrate' to apply migrations and clean up legacy items."
     return 0
@@ -336,18 +405,28 @@ EOF
       echo "✔ Nothing to migrate."
       return 0
     fi
-    if (( mig_state_pending )); then
-      echo "[DRY-RUN] Would create: $target_state"
-      [[ -f "$legacy_state/commands.log" ]] && echo "[DRY-RUN] Would move: $legacy_state/commands.log -> $target_state/commands.log"
-      echo "[DRY-RUN] Would remove: $legacy_state"
-    fi
-    if (( mig_config_pending )); then
-      echo "[DRY-RUN] Would migrate contents of $legacy_config to $target_config"
-      echo "[DRY-RUN] Would remove: $legacy_config"
-    fi
+    for s in "${mig_states[@]}"; do
+      echo "[DRY-RUN] Would create: $dest_state"
+      [[ -f "$s/commands.log" ]] && echo "[DRY-RUN] Would move/merge: $s/commands.log -> $dest_state/commands.log"
+      echo "[DRY-RUN] Would remove: $s"
+    done
+    for c in "${mig_configs[@]}"; do
+      if [[ ! -d "$dest_config" ]]; then
+        echo "[DRY-RUN] Would rename directory: $c -> $dest_config"
+      else
+        echo "[DRY-RUN] Would migrate essential configs from $c to $dest_config"
+        echo "[DRY-RUN] Would remove: $c"
+      fi
+    done
     if (( mig_git_pending )); then
-      echo "[DRY-RUN] Would update ~/.gitconfig include.path to point to $target_config/.gitconfig"
+      echo "[DRY-RUN] Would update ~/.gitconfig include.path to point to $dest_config/.gitconfig"
     fi
+    for h in "${mig_hooks[@]}"; do
+      echo "[DRY-RUN] Would update shell hook in $h to point to $dest_config"
+    done
+    for l in "${mig_symlinks[@]}"; do
+      echo "[DRY-RUN] Would update symlink $l -> $dest_config/tmux/.tmux.conf"
+    done
     return 0
   fi
 
@@ -364,49 +443,82 @@ EOF
   log_msg "==> Applying ZenCLI migrations ($pending items)..."
 
   # Apply MIG-001: State Directory Migration
-  if (( mig_state_pending )); then
-    mkdir -p "$target_state" 2>/dev/null || true
-    if [[ -f "$legacy_state/commands.log" ]]; then
-      if [[ ! -f "$target_state/commands.log" ]]; then
-        mv "$legacy_state/commands.log" "$target_state/commands.log" 2>/dev/null || true
-        log_msg "  ✔ Migrated commands.log to $target_state/commands.log"
-      elif [[ -s "$legacy_state/commands.log" ]]; then
-        cat "$legacy_state/commands.log" >> "$target_state/commands.log" 2>/dev/null || true
-        rm -f "$legacy_state/commands.log" 2>/dev/null || true
-        log_msg "  ✔ Merged legacy commands.log into $target_state/commands.log"
+  if (( ${#mig_states[@]} > 0 )); then
+    mkdir -p "$dest_state" 2>/dev/null || true
+    for s in "${mig_states[@]}"; do
+      if [[ -f "$s/commands.log" ]]; then
+        if [[ ! -f "$dest_state/commands.log" ]]; then
+          mv "$s/commands.log" "$dest_state/commands.log" 2>/dev/null || true
+          log_msg "  ✔ Migrated commands.log to $dest_state/commands.log"
+        elif [[ -s "$s/commands.log" ]]; then
+          cat "$s/commands.log" >> "$dest_state/commands.log" 2>/dev/null || true
+          rm -f "$s/commands.log" 2>/dev/null || true
+          log_msg "  ✔ Merged legacy commands.log into $dest_state/commands.log"
+        fi
       fi
-    fi
-    rm -rf "$legacy_state" 2>/dev/null || true
-    log_msg "  ✔ Cleaned up legacy state directory: $legacy_state"
+      if [[ -f "$s/.installed.json" && ! -f "$dest_state/.installed.json" ]]; then
+        mv "$s/.installed.json" "$dest_state/.installed.json" 2>/dev/null || true
+      fi
+      rm -rf "$s" 2>/dev/null || true
+      log_msg "  ✔ Cleaned up legacy state directory: $s"
+    done
   fi
 
   # Apply MIG-002: Config Directory Migration
-  if (( mig_config_pending )); then
-    mkdir -p "$target_config" 2>/dev/null || true
-    for f in "$legacy_config/.installed.json" "$legacy_config/local/local.env"; do
-      if [[ -f "$f" ]]; then
-        local rel="${f#"$legacy_config/"}"
-        local dest="$target_config/$rel"
-        if [[ ! -f "$dest" ]]; then
-          mkdir -p "$(dirname "$dest")" 2>/dev/null || true
-          cp -a "$f" "$dest" 2>/dev/null || true
-          log_msg "  ✔ Preserved $rel from legacy config"
-        fi
+  if (( ${#mig_configs[@]} > 0 )); then
+    for c in "${mig_configs[@]}"; do
+      if [[ ! -d "$dest_config" ]]; then
+        mv "$c" "$dest_config" 2>/dev/null || true
+        git -C "$dest_config" remote set-url origin "https://github.com/venhdev/zencli.git" 2>/dev/null || true
+        log_msg "  ✔ Renamed $c to $dest_config"
+      else
+        for f in "$c/.installed.json" "$c/local/local.env"; do
+          if [[ -f "$f" ]]; then
+            local rel="${f#"$c/"}"
+            local dest="$dest_config/$rel"
+            if [[ ! -f "$dest" ]]; then
+              mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+              cp -a "$f" "$dest" 2>/dev/null || true
+              log_msg "  ✔ Preserved $rel from $c"
+            fi
+          fi
+        done
+        rm -rf "$c" 2>/dev/null || true
+        log_msg "  ✔ Cleaned up legacy config directory: $c"
       fi
     done
-    rm -rf "$legacy_config" 2>/dev/null || true
-    log_msg "  ✔ Cleaned up legacy config directory: $legacy_config"
   fi
 
   # Apply MIG-003: Git Config Reference
   if (( mig_git_pending )); then
     git config --global --unset-all include.path 'dotfiles/\.gitconfig' 2>/dev/null || true
-    if [[ -f "$target_config/.gitconfig" ]]; then
-      if ! git config --global --get-all include.path 2>/dev/null | grep -Fxq "$target_config/.gitconfig"; then
-        git config --global --add include.path "$target_config/.gitconfig"
+    git config --global --unset-all include.path 'zen/\.gitconfig' 2>/dev/null || true
+    if [[ -f "$dest_config/.gitconfig" ]]; then
+      if ! git config --global --get-all include.path 2>/dev/null | grep -Fxq "$dest_config/.gitconfig"; then
+        git config --global --add include.path "$dest_config/.gitconfig"
       fi
     fi
-    log_msg "  ✔ Updated global Git config include.path to $target_config/.gitconfig"
+    log_msg "  ✔ Updated global Git config include.path to $dest_config/.gitconfig"
+  fi
+
+  # Apply MIG-004: Shell Profile Hooks
+  if (( ${#mig_hooks[@]} > 0 )); then
+    for rc in "${mig_hooks[@]}"; do
+      if [[ -f "$rc" ]]; then
+        sed -E "s|ZEN=\"[^\"]*/\.config/(zen|dotfiles)\"|ZEN=\"$dest_config\"|g; s|DOTFILES=\"[^\"]*/\.config/(zen|dotfiles)\"|DOTFILES=\"$dest_config\"|g; s|\"\\\$HOME/\.config/(zen|dotfiles)\"|\"$dest_config\"|g; s|# Load (Zen|dotfiles)|# Load ZenCLI|g" "$rc" > "$rc.tmp" && mv "$rc.tmp" "$rc"
+        log_msg "  ✔ Updated shell profile hook in $rc to point to $dest_config"
+      fi
+    done
+  fi
+
+  # Apply MIG-005: Managed Symlinks
+  if (( ${#mig_symlinks[@]} > 0 )); then
+    for l in "${mig_symlinks[@]}"; do
+      if [[ "$l" == "$HOME/.tmux.conf" && -f "$dest_config/tmux/.tmux.conf" ]]; then
+        ln -sf "$dest_config/tmux/.tmux.conf" "$HOME/.tmux.conf"
+        log_msg "  ✔ Relinked $l to $dest_config/tmux/.tmux.conf"
+      fi
+    done
   fi
 
   log_msg "✔ Migration completed successfully."

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="https://github.com/venhdev/zen.git"
-DIR="${ZEN_DIR:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}"
+REPO="https://github.com/venhdev/zencli.git"
+DIR="${ZENCLI_DIR:-${ZEN_DIR:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}"
+LEGACY_ZEN_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
 LEGACY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
 LEGACY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
-TARGET_STATE_DIR="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+LEGACY_ZEN_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zen"
+TARGET_STATE_DIR="${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
 
 # Load SSOT platform detection library if present, or provide minimal bootstrap fallbacks
 if [[ -f "$DIR/core/00-platform-lib.sh" ]]; then
@@ -183,46 +185,53 @@ _probe_windows_tools() {
   done
 }
 
-# 0. Clean or Migrate from legacy ~/.config/dotfiles to ~/.config/zen
+# 0. Clean or Migrate from legacy directories to ~/.config/zencli
 if (( OPT_CLEAN )); then
-  if [[ -d "$DIR" ]]; then
-    echo "==> Cleaning previous installation directory at $DIR..."
-    rm -rf "$DIR"
-  fi
-  if [[ -d "$LEGACY_DIR" ]]; then
-    echo "==> Cleaning legacy dotfiles directory at $LEGACY_DIR..."
-    rm -rf "$LEGACY_DIR"
-  fi
-  if [[ -d "$LEGACY_STATE_DIR" ]]; then
-    echo "==> Cleaning legacy state directory at $LEGACY_STATE_DIR..."
-    rm -rf "$LEGACY_STATE_DIR"
-  fi
-elif [[ -d "$LEGACY_DIR" && "$DIR" != "$LEGACY_DIR" ]]; then
-  echo "==> Migrating legacy installation from $LEGACY_DIR to $DIR..."
-  if [[ ! -d "$DIR" ]]; then
-    mv "$LEGACY_DIR" "$DIR"
-    git -C "$DIR" remote set-url origin "$REPO" 2>/dev/null || true
-  else
-    [[ -f "$LEGACY_DIR/.installed.json" && ! -f "$DIR/.installed.json" ]] && cp "$LEGACY_DIR/.installed.json" "$DIR/"
-    [[ -f "$LEGACY_DIR/local/local.env" && ! -f "$DIR/local/local.env" ]] && cp "$LEGACY_DIR/local/local.env" "$DIR/local/"
-    rm -rf "$LEGACY_DIR"
-  fi
-  echo "✔ Successfully migrated to $DIR and cleaned up $LEGACY_DIR"
+  for d in "$DIR" "$LEGACY_ZEN_DIR" "$LEGACY_DIR"; do
+    if [[ -d "$d" ]]; then
+      echo "==> Cleaning directory at $d..."
+      rm -rf "$d"
+    fi
+  done
+  for s in "$TARGET_STATE_DIR" "$LEGACY_ZEN_STATE_DIR" "$LEGACY_STATE_DIR"; do
+    if [[ -d "$s" ]]; then
+      echo "==> Cleaning state directory at $s..."
+      rm -rf "$s"
+    fi
+  done
+else
+  # Migrate legacy config directories (dotfiles, zen -> zencli)
+  for leg_cfg in "$LEGACY_ZEN_DIR" "$LEGACY_DIR"; do
+    if [[ -d "$leg_cfg" && "$DIR" != "$leg_cfg" ]]; then
+      echo "==> Migrating legacy installation from $leg_cfg to $DIR..."
+      if [[ ! -d "$DIR" ]]; then
+        mv "$leg_cfg" "$DIR"
+        git -C "$DIR" remote set-url origin "$REPO" 2>/dev/null || true
+      else
+        [[ -f "$leg_cfg/.installed.json" && ! -f "$DIR/.installed.json" ]] && cp "$leg_cfg/.installed.json" "$DIR/"
+        [[ -f "$leg_cfg/local/local.env" && ! -f "$DIR/local/local.env" ]] && cp "$leg_cfg/local/local.env" "$DIR/local/"
+        rm -rf "$leg_cfg"
+      fi
+      echo "✔ Successfully migrated to $DIR and cleaned up $leg_cfg"
+    fi
+  done
 fi
 
-# Always migrate legacy state directory (~/.local/state/dotfiles -> ~/.local/state/zen)
-if [[ -d "$LEGACY_STATE_DIR" ]]; then
-  echo "==> Migrating legacy state directory from $LEGACY_STATE_DIR to $TARGET_STATE_DIR..."
-  mkdir -p "$TARGET_STATE_DIR" 2>/dev/null || true
-  if [[ -f "$LEGACY_STATE_DIR/commands.log" && ! -f "$TARGET_STATE_DIR/commands.log" ]]; then
-    mv "$LEGACY_STATE_DIR/commands.log" "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
-  elif [[ -f "$LEGACY_STATE_DIR/commands.log" && -f "$TARGET_STATE_DIR/commands.log" ]]; then
-    cat "$LEGACY_STATE_DIR/commands.log" >> "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
-    rm -f "$LEGACY_STATE_DIR/commands.log" 2>/dev/null || true
+# Always migrate legacy state directories (~/.local/state/{dotfiles,zen} -> ~/.local/state/zencli)
+for leg_state in "$LEGACY_ZEN_STATE_DIR" "$LEGACY_STATE_DIR"; do
+  if [[ -d "$leg_state" && "$leg_state" != "$TARGET_STATE_DIR" ]]; then
+    echo "==> Migrating legacy state directory from $leg_state to $TARGET_STATE_DIR..."
+    mkdir -p "$TARGET_STATE_DIR" 2>/dev/null || true
+    if [[ -f "$leg_state/commands.log" && ! -f "$TARGET_STATE_DIR/commands.log" ]]; then
+      mv "$leg_state/commands.log" "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
+    elif [[ -f "$leg_state/commands.log" && -f "$TARGET_STATE_DIR/commands.log" ]]; then
+      cat "$leg_state/commands.log" >> "$TARGET_STATE_DIR/commands.log" 2>/dev/null || true
+      rm -f "$leg_state/commands.log" 2>/dev/null || true
+    fi
+    rm -rf "$leg_state" 2>/dev/null || true
+    echo "✔ Successfully migrated state directory to $TARGET_STATE_DIR"
   fi
-  rm -rf "$LEGACY_STATE_DIR" 2>/dev/null || true
-  echo "✔ Successfully migrated state directory to $TARGET_STATE_DIR"
-fi
+done
 
 # 1. Update or clone repository
 if [[ -n "${DOTFILES_REEXEC:-}" ]]; then
@@ -718,32 +727,34 @@ rm -f "$DIR/enabled.d"/50-*.sh
 touch "$RC_FILE"
 
 # Clean legacy dotfiles or zen hooks
-if grep -Eq '# Load (dotfiles|zen|Zen)' "$RC_FILE" 2>/dev/null; then
-  sed -E '/^# Load (dotfiles|zen|Zen)$/,/^unset _(cfg|f) (DOTFILES|ZEN)$/d' "$RC_FILE" > "$RC_FILE.tmp" && mv "$RC_FILE.tmp" "$RC_FILE"
+if grep -Eq '# Load (dotfiles|zen|Zen|ZenCLI|zencli)' "$RC_FILE" 2>/dev/null; then
+  sed -E '/^# Load (dotfiles|zen|Zen|ZenCLI|zencli)$/,/^unset _(cfg|f) (DOTFILES|ZEN|ZENCLI)$/d' "$RC_FILE" > "$RC_FILE.tmp" && mv "$RC_FILE.tmp" "$RC_FILE"
 fi
 
 cat >>"$RC_FILE" <<EOF
 
-# Load Zen
-ZEN="$DIR"
+# Load ZenCLI
+ZENCLI="$DIR"
 
-[ -r "\$ZEN/local/local.env" ] && . "\$ZEN/local/local.env"
+[ -r "\$ZENCLI/local/local.env" ] && . "\$ZENCLI/local/local.env"
 
-for _f in "\$ZEN"/core/*.sh "\$ZEN"/enabled.d/*.sh "\$HOME/.env"; do
+for _f in "\$ZENCLI"/core/*.sh "\$ZENCLI"/enabled.d/*.sh "\$HOME/.env"; do
   [ -r "\$_f" ] && . "\$_f"
 done
 
-unset _f ZEN
+unset _f ZENCLI
 EOF
 
 # 6. Global Git Configuration
 GIT_CONFIG_FILE="$DIR/.gitconfig"
 OLD_GIT_ALIASES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.gitconfig_aliases"
 OLD_GIT_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.gitconfig"
+OLD_GIT_ZEN_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/zen/.gitconfig"
 if command -v git >/dev/null 2>&1; then
   git config --global --unset-all include.path "$OLD_GIT_ALIASES_FILE" 2>/dev/null || true
-  if [[ "$DIR" != "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles" ]]; then
-    git config --global --unset-all include.path "$OLD_GIT_CONFIG_FILE" 2>/dev/null || true
+  git config --global --unset-all include.path "$OLD_GIT_CONFIG_FILE" 2>/dev/null || true
+  if [[ "$DIR" != "$OLD_GIT_ZEN_CONFIG" ]]; then
+    git config --global --unset-all include.path "$OLD_GIT_ZEN_CONFIG" 2>/dev/null || true
   fi
   if (( selected[6] )); then
     if ! git config --global --get-all include.path 2>/dev/null | grep -Fxq "$GIT_CONFIG_FILE"; then

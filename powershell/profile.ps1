@@ -6,8 +6,14 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
 
-$global:DOTFILES_DIR = if ($env:DOTFILES) {
+$global:DOTFILES_DIR = if ($env:ZENCLI_DIR) {
+    $env:ZENCLI_DIR
+} elseif ($env:ZEN_DIR) {
+    $env:ZEN_DIR
+} elseif ($env:DOTFILES) {
     $env:DOTFILES
+} elseif (Test-Path "$env:USERPROFILE\.config\zencli") {
+    "$env:USERPROFILE\.config\zencli"
 } elseif (Test-Path "$env:USERPROFILE\.config\zen") {
     "$env:USERPROFILE\.config\zen"
 } elseif (Test-Path "$env:USERPROFILE\.config\dotfiles") {

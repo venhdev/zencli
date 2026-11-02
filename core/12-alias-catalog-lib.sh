@@ -16,7 +16,7 @@ _zen_alias_catalog() {
   elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
     dotfiles_root="$(_get_dotfiles_root)"
   else
-    dotfiles_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
+    dotfiles_root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}}"
   fi
 
   local files=()

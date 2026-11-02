@@ -100,7 +100,15 @@ function conf {
         [string]$Key = ""
     )
 
-    $dotfiles = if ($global:DOTFILES_DIR) { $global:DOTFILES_DIR } else { "$env:USERPROFILE\.config\dotfiles" }
+    $dotfiles = if ($global:DOTFILES_DIR) {
+        $global:DOTFILES_DIR
+    } elseif (Test-Path "$env:USERPROFILE\.config\zencli") {
+        "$env:USERPROFILE\.config\zencli"
+    } elseif (Test-Path "$env:USERPROFILE\.config\zen") {
+        "$env:USERPROFILE\.config\zen"
+    } else {
+        "$env:USERPROFILE\.config\dotfiles"
+    }
 
     $configMap = [ordered]@{
         "profile"    = $PROFILE

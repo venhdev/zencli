@@ -213,11 +213,13 @@ _detect_origin() {
 # MANIFEST LEDGER SYNC HELPERS (.installed.json)
 # ==============================================================================
 _get_manifest_path() {
-  local root="${_DOTFILES_ROOT:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}}"
+  local root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${_DOTFILES_ROOT:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}}}"
   local candidates=(
     "${ZEN_MANIFEST:-}"
     "$root/.installed.json"
+    "${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}/.installed.json"
     "${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}/.installed.json"
+    "${XDG_CONFIG_HOME:-$HOME/.config}/zencli/.installed.json"
     "${XDG_CONFIG_HOME:-$HOME/.config}/zen/.installed.json"
     "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/.installed.json"
   )

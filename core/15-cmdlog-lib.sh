@@ -4,7 +4,7 @@ _cmdlog_file() {
   if declare -F _get_cmdlog_path >/dev/null 2>&1; then
     _get_cmdlog_path
   else
-    local state_dir="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+    local state_dir="${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
     echo "${_CMD_LOG:-${CMD_LOG:-$state_dir/commands.log}}"
   fi
 }

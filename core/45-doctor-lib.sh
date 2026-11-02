@@ -25,7 +25,7 @@ _zen_doctor() {
   elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
     dotfiles_root="$(_get_dotfiles_root)"
   else
-    dotfiles_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
+    dotfiles_root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}}"
   fi
   local manifest_file
   if declare -F _get_manifest_path >/dev/null 2>&1; then
@@ -83,7 +83,7 @@ _zen_doctor() {
 
   local shell_hook_found=0
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [[ -f "$rc" ]] && grep -qE '# Load (dotfiles|zen|Zen)|(dotfiles|zen)/core' "$rc" 2>/dev/null; then
+    if [[ -f "$rc" ]] && grep -qE '# Load (dotfiles|zen|zencli|Zen|ZenCLI)|(dotfiles|zen|zencli)/core' "$rc" 2>/dev/null; then
       printf "  ${c_green}✔${c_reset} Active profile hook verified in: %s\n" "$rc"
       shell_hook_found=1
       ((pass_count++))
@@ -99,7 +99,7 @@ _zen_doctor() {
   # [3/5] Managed Symlinks & Git Configuration
   # ----------------------------------------------------------------------------
   printf "\n${c_bold}[3/5] Managed Symlinks & Git Configuration${c_reset}\n"
-  if [[ -f "$HOME/.gitconfig" ]] && grep -qE '(zen|dotfiles)/\.gitconfig' "$HOME/.gitconfig" 2>/dev/null; then
+  if [[ -f "$HOME/.gitconfig" ]] && grep -qE '(zencli|zen|dotfiles)/\.gitconfig' "$HOME/.gitconfig" 2>/dev/null; then
     printf "  ${c_green}✔${c_reset} Global Git config includes ZenCLI .gitconfig\n"
     ((pass_count++))
   else
@@ -193,7 +193,7 @@ except Exception:
   elif declare -F _get_cmdlog_path >/dev/null 2>&1; then
     log_file="$(_get_cmdlog_path)"
   else
-    local state_dir="${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zen}"
+    local state_dir="${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
     log_file="${_CMD_LOG:-${CMD_LOG:-$state_dir/commands.log}}"
   fi
   local log_dir="$(dirname "$log_file")"
@@ -210,9 +210,11 @@ except Exception:
   fi
 
   # Check if legacy migration is pending
-  local legacy_state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
-  local legacy_config="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
-  if [[ -d "$legacy_state" || ( -d "$legacy_config" && "$legacy_config" != "$dotfiles_root" ) ]]; then
+  local legacy_state_dotfiles="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+  local legacy_state_zen="${XDG_STATE_HOME:-$HOME/.local/state}/zen"
+  local legacy_config_dotfiles="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"
+  local legacy_config_zen="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
+  if [[ -d "$legacy_state_dotfiles" || -d "$legacy_state_zen" || ( -d "$legacy_config_dotfiles" && "$legacy_config_dotfiles" != "$dotfiles_root" ) || ( -d "$legacy_config_zen" && "$legacy_config_zen" != "$dotfiles_root" ) ]]; then
     printf "  ${c_yellow}⚠${c_reset} Legacy artifacts detected. Run 'zencli migrate' to clean up.\n"
     ((warn_count++))
   fi

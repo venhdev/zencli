@@ -79,6 +79,8 @@ Note: To reconfigure system modules or run full provisioning, use 'zen setup'.
 
     $dotfilesRoot = if ($global:DOTFILES_DIR -and (Test-Path $global:DOTFILES_DIR)) {
         $global:DOTFILES_DIR
+    } elseif (Test-Path "$env:USERPROFILE\.config\zencli") {
+        "$env:USERPROFILE\.config\zencli"
     } elseif (Test-Path "$env:USERPROFILE\.config\zen") {
         "$env:USERPROFILE\.config\zen"
     } elseif (Test-Path "$env:USERPROFILE\.config\dotfiles") {
@@ -279,10 +281,14 @@ function _zen_doctor {
     Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Edition: $PSEdition | Version: $($PSVersionTable.PSVersion)"
 
     # ZenCLI root
-    $zenRoot = if ($global:ZEN_DIR -and (Test-Path $global:ZEN_DIR)) {
+    $zenRoot = if ($global:ZENCLI_DIR -and (Test-Path $global:ZENCLI_DIR)) {
+        $global:ZENCLI_DIR
+    } elseif ($global:ZEN_DIR -and (Test-Path $global:ZEN_DIR)) {
         $global:ZEN_DIR
     } elseif ($global:DOTFILES_DIR -and (Test-Path $global:DOTFILES_DIR)) {
         $global:DOTFILES_DIR
+    } elseif (Test-Path "$env:USERPROFILE\.config\zencli") {
+        "$env:USERPROFILE\.config\zencli"
     } elseif (Test-Path "$env:USERPROFILE\.config\zen") {
         "$env:USERPROFILE\.config\zen"
     } else {

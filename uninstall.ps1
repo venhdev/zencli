@@ -4,7 +4,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$TargetDir = "$env:USERPROFILE\.config\zen",
+    [string]$TargetDir = "$env:USERPROFILE\.config\zencli",
     [switch]$Force
 )
 

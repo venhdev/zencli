@@ -84,8 +84,8 @@ sleepin() {
   if declare -F _get_dotfiles_root >/dev/null 2>&1; then
     dotfiles_root="$(_get_dotfiles_root)"
   else
-    dotfiles_root="${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}"
-    [[ -d "$dotfiles_root" ]] || dotfiles_root="$HOME/.config/zen"
+    dotfiles_root="${ZENCLI:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}"
+    [[ -d "$dotfiles_root" ]] || dotfiles_root="$HOME/.config/zencli"
   fi
 
   local ps_script="$dotfiles_root/scripts/sleep.ps1"

@@ -7,7 +7,7 @@ conf() {
   elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
     zen_root="$(_get_dotfiles_root)"
   else
-    zen_root="${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zen}}}"
+    zen_root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}}"
   fi
 
   local -A m=(

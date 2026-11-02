@@ -304,6 +304,9 @@ function insdf {
 
     $installerPs1 = "$global:DOTFILES_DIR\install.ps1"
     if (-not (Test-Path $installerPs1)) {
+        $installerPs1 = "$env:USERPROFILE\.config\zencli\install.ps1"
+    }
+    if (-not (Test-Path $installerPs1)) {
         $installerPs1 = "$env:USERPROFILE\.config\zen\install.ps1"
     }
     if (-not (Test-Path $installerPs1)) {

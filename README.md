@@ -28,14 +28,14 @@ A fast, modular, zero-dependency dotfiles system and workstation environment for
 
 #### Interactive TUI Installation:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zen/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/install.sh | bash
 ```
 - **TUI Controls:** `[↑/↓]` or `[j/k]` to navigate, `[Space]` to toggle selection, `[a]` to toggle all, `[Enter]` to confirm, `[q]` to cancel.
 - **Auto-Detection:** Automatically detects Zsh vs. Bash, WSL environment, SSH keys in `~/.ssh/`, and automatically hooks PowerShell `$PROFILE` when installing from Git Bash on Windows.
 
 #### Automated Non-Interactive Installation (All Modules):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zen/main/install.sh | bash -s -- --all
+curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/install.sh | bash -s -- --all
 ```
 
 ---
@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/venhdev/zen/main/install.sh | bash 
 
 Open PowerShell (Windows Terminal) and run:
 ```powershell
-irm https://raw.githubusercontent.com/venhdev/zen/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/venhdev/zencli/main/install.ps1 | iex
 ```
 This configures your PowerShell `$PROFILE`, prepends `~/bin` & `~/.local/bin` to `$env:PATH`, and configures global Git `include.path`.
 
@@ -510,5 +510,5 @@ dotfiles/
 ## 13. Uninstallation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zen/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/uninstall.sh | bash
 ```

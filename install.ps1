@@ -1,18 +1,21 @@
 # Dotfiles Windows PowerShell Installer
 # Usage:
-#   irm https://raw.githubusercontent.com/venhdev/zen/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/venhdev/zencli/main/install.ps1 | iex
 
 [CmdletBinding()]
 param(
-    [string]$RepoUrl = "https://github.com/venhdev/zen.git",
-    [string]$TargetDir = "$env:USERPROFILE\.config\zen"
+    [string]$RepoUrl = "https://github.com/venhdev/zencli.git",
+    [string]$TargetDir = "$env:USERPROFILE\.config\zencli"
 )
 
-$legacyDir = "$env:USERPROFILE\.config\dotfiles"
-if ((Test-Path $legacyDir) -and (-not (Test-Path $TargetDir))) {
-    Write-Host "Migrating legacy dotfiles directory from $legacyDir to $TargetDir..." -ForegroundColor Green
-    Move-Item -Path $legacyDir -Destination $TargetDir -Force
-    git -C $TargetDir remote set-url origin $RepoUrl 2>$null
+$legacyZenDir = "$env:USERPROFILE\.config\zen"
+$legacyDotfilesDir = "$env:USERPROFILE\.config\dotfiles"
+foreach ($leg in @($legacyZenDir, $legacyDotfilesDir)) {
+    if ((Test-Path $leg) -and (-not (Test-Path $TargetDir))) {
+        Write-Host "Migrating legacy directory from $leg to $TargetDir..." -ForegroundColor Green
+        Move-Item -Path $leg -Destination $TargetDir -Force
+        git -C $TargetDir remote set-url origin $RepoUrl 2>$null
+    }
 }
 
 $ErrorActionPreference = "Stop"

@@ -242,7 +242,9 @@ try:
         data = json.load(f)
     t = data.get("tools", {}).get(cmd, {})
     if t:
-        print(f"{t.get(\"installed_at\", \"-\")}|{t.get(\"updated_at\", \"-\")}")
+        i_at = t.get("installed_at") or t.get("updated_at") or "-"
+        u_at = t.get("updated_at") or "-"
+        print(f"{i_at}|{u_at}")
 except Exception:
     pass
 ' "$manifest_file" "$cmd" 2>/dev/null || true
@@ -407,6 +409,11 @@ _refresh_inventory() {
       ver_str="$(_get_tool_version "$cmd")"
       versions+=("${ver_str:--}")
 
+      # Auto-sync active installed tool into manifest ledger first
+      local clean_origin="apt"
+      [[ "$origin_label" == *"github"* ]] && clean_origin="github"
+      _manifest_sync_tool "$cmd" "$clean_origin" "$apt_pkg" "${ver_str:--}" "$path_val" "$gh_repo"
+
       # Pre-cache manifest installed date once during inventory refresh
       local inst_date="-"
       local minfo
@@ -414,12 +421,14 @@ _refresh_inventory() {
       if [[ -n "$minfo" ]]; then
         inst_date="${minfo%%|*}"
       fi
-      manifest_dates+=("$inst_date")
 
-      # Auto-sync active installed tool into manifest if manifest exists
-      local clean_origin="apt"
-      [[ "$origin_label" == *"github"* ]] && clean_origin="github"
-      _manifest_sync_tool "$cmd" "$clean_origin" "$apt_pkg" "${ver_str:--}" "$path_val" "$gh_repo"
+      # Format ISO timestamp into clean human-readable date: 2026-11-02 01:12 UTC
+      if [[ "$inst_date" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}) ]]; then
+        inst_date="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} UTC"
+      elif [[ "$inst_date" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+        inst_date="${BASH_REMATCH[1]}"
+      fi
+      manifest_dates+=("$inst_date")
     fi
 
     # Maintain existing staged action or default to 0 (None)
@@ -688,13 +697,13 @@ _action_review_and_execute() {
   )
   if (( total_apt > 0 )); then
     review_lines+=(
-      "  • System APT ($total_apt pkgs): Requires sudo"
+      "  - System APT ($total_apt pkgs): Requires sudo"
       "    (Password authenticated once up front)"
     )
   fi
   if (( total_gh > 0 )); then
     review_lines+=(
-      "  • User Binaries ($total_gh pkgs): ~/.local/bin (no sudo)"
+      "  - User Binaries ($total_gh pkgs): ~/.local/bin (no sudo)"
     )
   fi
 
@@ -883,7 +892,11 @@ _render_live_detail() {
   for line in "${detail_lines[@]}"; do
     local trunc_line
     trunc_line="$(_tui_truncate "$line" "$inner_width")"
-    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_line" >/dev/tty
+    local pad_spaces=$(( inner_width - ${#trunc_line} ))
+    (( pad_spaces < 0 )) && pad_spaces=0
+    local pad_str
+    printf -v pad_str "%*s" "$pad_spaces" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
   local bot_dashes

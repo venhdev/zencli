@@ -257,7 +257,11 @@ _tui_modal_box() {
   for line in "${_lines[@]}"; do
     local trunc_line
     trunc_line="$(_tui_truncate "$line" "$inner_width")"
-    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_line" >/dev/tty
+    local pad_spaces=$(( inner_width - ${#trunc_line} ))
+    (( pad_spaces < 0 )) && pad_spaces=0
+    local pad_str
+    printf -v pad_str "%*s" "$pad_spaces" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
   local div_dashes
@@ -266,7 +270,11 @@ _tui_modal_box() {
   local return_hint="  [Press any key or Esc/q to return]"
   local trunc_hint
   trunc_hint="$(_tui_truncate "$return_hint" "$inner_width")"
-  printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_GRAY}%-*s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_hint" >/dev/tty
+  local pad_hint_spaces=$(( inner_width - ${#trunc_hint} ))
+  (( pad_hint_spaces < 0 )) && pad_hint_spaces=0
+  local pad_hint_str
+  printf -v pad_hint_str "%*s" "$pad_hint_spaces" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_GRAY}%s%s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_hint" "$pad_hint_str" >/dev/tty
   printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$div_dashes" >/dev/tty
 
   local dummy=""
@@ -300,7 +308,11 @@ _tui_modal_confirm() {
   for line in "${_lines[@]}"; do
     local trunc_line
     trunc_line="$(_tui_truncate "$line" "$inner_width")"
-    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_line" >/dev/tty
+    local pad_spaces=$(( inner_width - ${#trunc_line} ))
+    (( pad_spaces < 0 )) && pad_spaces=0
+    local pad_str
+    printf -v pad_str "%*s" "$pad_spaces" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
   local div_dashes
@@ -308,7 +320,11 @@ _tui_modal_confirm() {
   printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$div_dashes" >/dev/tty
   local trunc_hint
   trunc_hint="$(_tui_truncate "  $prompt_hint" "$inner_width")"
-  printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_BOLD}%-*s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_width" "$trunc_hint" >/dev/tty
+  local pad_hint_spaces=$(( inner_width - ${#trunc_hint} ))
+  (( pad_hint_spaces < 0 )) && pad_hint_spaces=0
+  local pad_hint_str
+  printf -v pad_hint_str "%*s" "$pad_hint_spaces" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_BOLD}%s%s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_hint" "$pad_hint_str" >/dev/tty
   printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$div_dashes" >/dev/tty
 
   local dummy=""

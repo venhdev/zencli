@@ -19,6 +19,13 @@ else
   has_apt() { command -v apt-get >/dev/null 2>&1; }
 fi
 
+# Load standardized TUI component & event engine
+if [[ -f "$DIR/core/05-tui-lib.sh" ]]; then
+  . "$DIR/core/05-tui-lib.sh"
+elif [[ -f "${BASH_SOURCE[0]%/*}/core/05-tui-lib.sh" ]]; then
+  . "${BASH_SOURCE[0]%/*}/core/05-tui-lib.sh"
+fi
+
 # Auto-detect shell RC target (Zsh on macOS/Linux vs standard Bash)
 if [[ -n "${DOTFILES_BASHRC:-}" ]]; then
   RC_FILE="$DOTFILES_BASHRC"
@@ -117,151 +124,13 @@ handle_cancel() {
 trap restore_cursor EXIT
 trap handle_cancel INT TERM
 
-# --- Generic TUI Engine ---
-
-_tui_select_one() {
-  local title="$1" subtitle="$2" selected_out="$3"
-  shift 3
-  local items=("$@")
-  local count=${#items[@]}
-  local cursor=0 key seq idx i
-
-  if [[ -n "${!selected_out:-}" ]]; then
-    for ((idx=0; idx<count; idx++)); do
-      if [[ "${items[idx]}" == "${!selected_out}" || "$idx" == "${!selected_out}" ]]; then
-        cursor=$idx
-        break
-      fi
-    done
-  fi
-
-  tput civis >/dev/tty 2>/dev/null || printf "\033[?25l" >/dev/tty
-
-  while true; do
-    printf "\033[H\033[2J" >/dev/tty
-    printf "\033[1;36m=== %s ===\033[0m\n" "$title" >/dev/tty
-    [[ -n "$subtitle" ]] && printf "\033[1;34m--- %s ---\033[0m\n" "$subtitle" >/dev/tty
-    printf "\033[90m[↑/↓] Navigate | [Enter] Confirm | [q] Cancel\033[0m\n\n" >/dev/tty
-
-    for ((i=0; i<count; i++)); do
-      if (( i == cursor )); then
-        printf " \033[1;32m> %s\033[0m\n" "${items[i]}" >/dev/tty
-      else
-        printf "   %s\n" "${items[i]}" >/dev/tty
-      fi
-    done
-    printf "\n" >/dev/tty
-
-    IFS= read -rsn1 key < /dev/tty
-    if [[ $key == $'\x1b' ]]; then
-      read -rsn2 -t 0.1 seq < /dev/tty || true
-      case "$seq" in
-        "[A"|"OA") if ((cursor > 0)); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi ;;
-        "[B"|"OB") if ((cursor < count - 1)); then cursor=$((cursor + 1)); else cursor=0; fi ;;
-      esac
-    elif [[ $key == "k" || $key == "K" ]]; then
-      if ((cursor > 0)); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
-    elif [[ $key == "j" || $key == "J" ]]; then
-      if ((cursor < count - 1)); then cursor=$((cursor + 1)); else cursor=0; fi
-    elif [[ $key == "q" || $key == "Q" || $key == $'\x03' ]]; then
-      handle_cancel
-    elif [[ $key == "" || $key == $'\r' || $key == $'\n' ]]; then
-      break
-    fi
-  done
-  restore_cursor
-
-  printf -v "$selected_out" "%s" "$cursor"
-}
-
-_tui_select_many() {
-  local title="$1" subtitle="$2" state_ref="$3" has_toggle_all="$4"
-  shift 4
-  local labels=("$@")
-  local count=${#labels[@]}
-  local cursor=0 key seq idx i
-  local -n sel="$state_ref"
-
-  tput civis >/dev/tty 2>/dev/null || printf "\033[?25l" >/dev/tty
-
-  while true; do
-    printf "\033[H\033[2J" >/dev/tty
-    printf "\033[1;36m=== %s ===\033[0m\n" "$title" >/dev/tty
-    [[ -n "$subtitle" ]] && printf "\033[1;34m--- %s ---\033[0m\n" "$subtitle" >/dev/tty
-    if (( has_toggle_all )); then
-      printf "\033[90m[↑/↓] Navigate | [Space] Toggle | [a] Toggle All | [Enter] Confirm | [q] Cancel\033[0m\n\n" >/dev/tty
-    else
-      printf "\033[90m[↑/↓] Navigate | [Space] Toggle | [Enter] Confirm | [q] Cancel\033[0m\n\n" >/dev/tty
-    fi
-
-    local all_mark=" "
-    if (( has_toggle_all )); then
-      local total_sel=0
-      for ((i=1; i<count; i++)); do
-        (( sel[i] )) && total_sel=$((total_sel + 1))
-      done
-      if (( total_sel == count - 1 )); then
-        all_mark="*"
-      elif (( total_sel > 0 )); then
-        all_mark="-"
-      fi
-    fi
-
-    for ((i=0; i<count; i++)); do
-      local mark=" "
-      if (( has_toggle_all && i == 0 )); then
-        mark="$all_mark"
-      else
-        (( sel[i] )) && mark="x"
-      fi
-
-      if (( i == cursor )); then
-        printf " \033[1;32m> [%s] %s\033[0m\n" "$mark" "${labels[i]}" >/dev/tty
-      else
-        printf "   [%s] %s\n" "$mark" "${labels[i]}" >/dev/tty
-      fi
-    done
-    printf "\n" >/dev/tty
-
-    IFS= read -rsn1 key < /dev/tty
-    if [[ $key == $'\x1b' ]]; then
-      read -rsn2 -t 0.1 seq < /dev/tty || true
-      case "$seq" in
-        "[A"|"OA") if ((cursor > 0)); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi ;;
-        "[B"|"OB") if ((cursor < count - 1)); then cursor=$((cursor + 1)); else cursor=0; fi ;;
-      esac
-    elif [[ $key == "k" || $key == "K" ]]; then
-      if ((cursor > 0)); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
-    elif [[ $key == "j" || $key == "J" ]]; then
-      if ((cursor < count - 1)); then cursor=$((cursor + 1)); else cursor=0; fi
-    elif [[ $key == "a" || $key == "A" ]] && (( has_toggle_all )); then
-      local all_on=1
-      for ((idx=1; idx<count; idx++)); do
-        (( sel[idx] == 0 )) && { all_on=0; break; }
-      done
-      for ((idx=1; idx<count; idx++)); do
-        sel[idx]=$(( 1 - all_on ))
-      done
-    elif [[ $key == " " ]]; then
-      if (( has_toggle_all && cursor == 0 )); then
-        local all_on=1
-        for ((idx=1; idx<count; idx++)); do
-          (( sel[idx] == 0 )) && { all_on=0; break; }
-        done
-        for ((idx=1; idx<count; idx++)); do
-          sel[idx]=$(( 1 - all_on ))
-        done
-      else
-        sel[cursor]=$(( 1 - sel[cursor] ))
-      fi
-    elif [[ $key == "q" || $key == "Q" || $key == $'\x03' ]]; then
-      handle_cancel
-    elif [[ $key == "" || $key == $'\r' || $key == $'\n' ]]; then
-      break
-    fi
-  done
-  restore_cursor
-}
+# ==============================================================================
+# TUI Engine Hand-off to Standardized Library (core/05-tui-lib.sh)
+# ==============================================================================
+if ! declare -F _tui_select_one >/dev/null 2>&1; then
+  echo "Error: Standardized TUI library (core/05-tui-lib.sh) could not be loaded." >&2
+  exit 1
+fi
 
 # --- Declarative Windows Tool Registry & Probe ---
 
@@ -583,7 +452,7 @@ _prompt_ssh_key() {
       done
     fi
 
-    _tui_select_one "DOTFILES CONFIGURATION" "SSH Key Selection" ssh_choice "${ssh_menu_items[@]}"
+    _tui_select_one "ZENCLI CONFIGURATION" "SSH Key Selection" ssh_choice "${ssh_menu_items[@]}"
 
     if (( ssh_choice < num_detected )); then
       ssh_init_val="${detected_ssh_keys[ssh_choice]}"
@@ -614,7 +483,7 @@ _prompt_win_tools() {
 
   [[ -z "$existing_win_path" && ! -d "$default_win" ]] && win_choice=1
 
-  _tui_select_one "DOTFILES CONFIGURATION" "Windows Path Selection" win_choice "${win_menu_items[@]}"
+  _tui_select_one "ZENCLI CONFIGURATION" "Windows Path Selection" win_choice "${win_menu_items[@]}"
 
   if (( win_choice == 0 )); then
     win_path_val="${win_menu_items[0]}"
@@ -628,7 +497,7 @@ _prompt_win_tools() {
 
   if [[ -n "$win_path_val" && "$win_path_val" != "none" && -d "$win_path_val" ]]; then
     _probe_windows_tools "$win_path_val"
-    _tui_select_many "DOTFILES CONFIGURATION" "Windows Tools Selection" tool_selected 0 "${tool_labels[@]}"
+    _tui_select_many "ZENCLI CONFIGURATION" "Windows Tools Selection" tool_selected 0 "${tool_labels[@]}"
 
     for ((t=0; t<${#tool_ids[@]}; t++)); do
       if (( tool_selected[t] )); then
@@ -656,7 +525,7 @@ _prompt_timezone() {
     tz_choice=3
   fi
 
-  _tui_select_one "DOTFILES CONFIGURATION" "Timezone Selection (UTC / Local)" tz_choice "${tz_menu_items[@]}"
+  _tui_select_one "ZENCLI CONFIGURATION" "Timezone Selection (UTC / Local)" tz_choice "${tz_menu_items[@]}"
 
   case "$tz_choice" in
     0) tz_val="Asia/Ho_Chi_Minh" ;;
@@ -723,7 +592,7 @@ elif can_prompt_interactively; then
     (( target_win_prompt )) && _prompt_win_tools
     (( target_tz_prompt )) && _prompt_timezone
   else
-    _tui_select_many "DOTFILES MODULE SELECTOR" "" selected 1 "${menu_labels[@]}"
+    _tui_select_many "ZENCLI MODULE SELECTOR" "" selected 1 "${menu_labels[@]}"
 
     # Dynamic Configuration Prompts
     if (( selected[1] || selected[2] || selected[3] )); then

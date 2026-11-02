@@ -26,6 +26,7 @@ _TUI_DIRTY=0
 
 # Check if TTY is interactive and writable
 _tui_is_interactive() {
+  [[ "${_TUI_FORCE_NON_INTERACTIVE:-0}" == "1" ]] && return 1
   { exec 3<>/dev/tty; } 2>/dev/null || return 1
   exec 3>&-
   return 0
@@ -135,62 +136,62 @@ _tui_clear() {
 #   UP, DOWN, LEFT, RIGHT, SPACE, ENTER, ESC, QUIT, REDRAW,
 #   ALL, INSTALL, UPDATE, DELETE, INFO, or CHAR:<c>
 _tui_read_key() {
-  local _out_var="$1"
-  local key=""
+  local __trk_out_var="$1"
+  local __trk_key=""
 
   if (( _TUI_DIRTY )); then
     _TUI_DIRTY=0
-    eval "$_out_var='REDRAW'"
+    eval "$__trk_out_var='REDRAW'"
     return
   fi
 
-  if ! IFS= read -rsn1 key < /dev/tty 2>/dev/null; then
+  if ! IFS= read -rsn1 __trk_key < /dev/tty 2>/dev/null; then
     if (( _TUI_DIRTY )); then
       _TUI_DIRTY=0
-      eval "$_out_var='REDRAW'"
+      eval "$__trk_out_var='REDRAW'"
       return
     fi
-    eval "$_out_var='QUIT'"
+    eval "$__trk_out_var='QUIT'"
     return
   fi
 
-  if [[ "$key" == $'\x1b' ]]; then
-    local seq=""
-    read -rsn2 -t 0.1 seq < /dev/tty 2>/dev/null || seq=""
-    case "$seq" in
-      "[A"|"OA") eval "$_out_var='UP'" ;;
-      "[B"|"OB") eval "$_out_var='DOWN'" ;;
-      "[C"|"OC") eval "$_out_var='RIGHT'" ;;
-      "[D"|"OD") eval "$_out_var='LEFT'" ;;
-      "")        eval "$_out_var='ESC'" ;;
-      *)         eval "$_out_var='ESC'" ;;
+  if [[ "$__trk_key" == $'\x1b' ]]; then
+    local __trk_seq=""
+    read -rsn2 -t 0.1 __trk_seq < /dev/tty 2>/dev/null || __trk_seq=""
+    case "$__trk_seq" in
+      "[A"|"OA") eval "$__trk_out_var='UP'" ;;
+      "[B"|"OB") eval "$__trk_out_var='DOWN'" ;;
+      "[C"|"OC") eval "$__trk_out_var='RIGHT'" ;;
+      "[D"|"OD") eval "$__trk_out_var='LEFT'" ;;
+      "")        eval "$__trk_out_var='ESC'" ;;
+      *)         eval "$__trk_out_var='ESC'" ;;
     esac
-  elif [[ "$key" == "k" || "$key" == "K" ]]; then
-    eval "$_out_var='UP'"
-  elif [[ "$key" == "j" || "$key" == "J" ]]; then
-    eval "$_out_var='DOWN'"
-  elif [[ "$key" == " " ]]; then
-    eval "$_out_var='SPACE'"
-  elif [[ "$key" == "a" || "$key" == "A" ]]; then
-    eval "$_out_var='TOGGLE_ALL'"
-  elif [[ "$key" == "c" || "$key" == "C" ]]; then
-    eval "$_out_var='CLEAR'"
-  elif [[ "$key" == "m" || "$key" == "M" ]]; then
-    eval "$_out_var='MISSING'"
-  elif [[ "$key" == "i" || "$key" == "I" || "$key" == "+" ]]; then
-    eval "$_out_var='INSTALL'"
-  elif [[ "$key" == "u" || "$key" == "U" || "$key" == "^" ]]; then
-    eval "$_out_var='UPDATE'"
-  elif [[ "$key" == "d" || "$key" == "D" || "$key" == "-" ]]; then
-    eval "$_out_var='DELETE'"
-  elif [[ "$key" == "?" || "$key" == "o" || "$key" == "O" || "$key" == "h" || "$key" == "H" ]]; then
-    eval "$_out_var='INFO'"
-  elif [[ "$key" == "q" || "$key" == "Q" || "$key" == $'\x03' || "$key" == $'\x04' ]]; then
-    eval "$_out_var='QUIT'"
-  elif [[ "$key" == "" || "$key" == $'\r' || "$key" == $'\n' ]]; then
-    eval "$_out_var='ENTER'"
+  elif [[ "$__trk_key" == "k" || "$__trk_key" == "K" ]]; then
+    eval "$__trk_out_var='UP'"
+  elif [[ "$__trk_key" == "j" || "$__trk_key" == "J" ]]; then
+    eval "$__trk_out_var='DOWN'"
+  elif [[ "$__trk_key" == " " ]]; then
+    eval "$__trk_out_var='SPACE'"
+  elif [[ "$__trk_key" == "a" || "$__trk_key" == "A" ]]; then
+    eval "$__trk_out_var='TOGGLE_ALL'"
+  elif [[ "$__trk_key" == "c" || "$__trk_key" == "C" ]]; then
+    eval "$__trk_out_var='CLEAR'"
+  elif [[ "$__trk_key" == "m" || "$__trk_key" == "M" ]]; then
+    eval "$__trk_out_var='MISSING'"
+  elif [[ "$__trk_key" == "i" || "$__trk_key" == "I" || "$__trk_key" == "+" ]]; then
+    eval "$__trk_out_var='INSTALL'"
+  elif [[ "$__trk_key" == "u" || "$__trk_key" == "U" || "$__trk_key" == "^" ]]; then
+    eval "$__trk_out_var='UPDATE'"
+  elif [[ "$__trk_key" == "d" || "$__trk_key" == "D" || "$__trk_key" == "-" ]]; then
+    eval "$__trk_out_var='DELETE'"
+  elif [[ "$__trk_key" == "?" || "$__trk_key" == "o" || "$__trk_key" == "O" || "$__trk_key" == "h" || "$__trk_key" == "H" ]]; then
+    eval "$__trk_out_var='INFO'"
+  elif [[ "$__trk_key" == "q" || "$__trk_key" == "Q" || "$__trk_key" == $'\x03' || "$__trk_key" == $'\x04' ]]; then
+    eval "$__trk_out_var='QUIT'"
+  elif [[ "$__trk_key" == "" || "$__trk_key" == $'\r' || "$__trk_key" == $'\n' ]]; then
+    eval "$__trk_out_var='ENTER'"
   else
-    eval "$_out_var=\"CHAR:$key\""
+    eval "$__trk_out_var=\"CHAR:$__trk_key\""
   fi
 }
 
@@ -370,4 +371,194 @@ _tui_confirm_prompt() {
       ;;
     *) return 1 ;;
   esac
+}
+
+# ==============================================================================
+# UNIFIED TUI SELECTION ENGINES (Alternate Screen & Zero-Fork Event Loop)
+# ==============================================================================
+
+_tui_select_one() {
+  local title="$1" subtitle="$2" selected_out="$3"
+  shift 3
+  local items=("$@")
+  local count=${#items[@]}
+  local cursor=0 key idx i
+
+  # Pre-flight check
+  if ! _tui_is_interactive; then
+    printf -v "$selected_out" "%s" "0"
+    return 0
+  fi
+
+  if [[ -n "${!selected_out:-}" ]]; then
+    for ((idx=0; idx<count; idx++)); do
+      if [[ "${items[idx]}" == "${!selected_out}" || "$idx" == "${!selected_out}" ]]; then
+        cursor=$idx
+        break
+      fi
+    done
+  fi
+
+  _tui_enter
+
+  while true; do
+    _tui_clear
+    _tui_update_dimensions
+    _tui_draw_header "$title" "$subtitle"
+
+    local max_w=$(( _TUI_COLS - 4 ))
+    (( max_w > 80 )) && max_w=80
+    (( max_w < 36 )) && max_w=36
+
+    for ((i=0; i<count; i++)); do
+      local item_text="$(_tui_truncate "${items[i]}" "$((max_w - 6))")"
+      if (( i == cursor )); then
+        printf "  ${_TUI_GREEN}${_TUI_BOLD}> %s${_TUI_RESET}\n" "$item_text" >/dev/tty
+      else
+        printf "    %s\n" "$item_text" >/dev/tty
+      fi
+    done
+
+    _tui_draw_footer "[↑/↓] Navigate  [Enter] Confirm  [q/Esc] Cancel"
+
+    _tui_read_key key
+    case "$key" in
+      UP)
+        if (( cursor > 0 )); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
+        ;;
+      DOWN)
+        if (( cursor < count - 1 )); then cursor=$((cursor + 1)); else cursor=0; fi
+        ;;
+      ENTER)
+        break
+        ;;
+      QUIT|ESC)
+        _tui_exit
+        if declare -F handle_cancel >/dev/null 2>&1; then
+          handle_cancel
+        else
+          return 130
+        fi
+        ;;
+      REDRAW)
+        continue
+        ;;
+    esac
+  done
+
+  _tui_exit
+  printf -v "$selected_out" "%s" "$cursor"
+  return 0
+}
+
+_tui_select_many() {
+  local title="$1" subtitle="$2" state_ref="$3" has_toggle_all="$4"
+  shift 4
+  local labels=("$@")
+  local count=${#labels[@]}
+  local cursor=0 key idx i
+  local -n sel="$state_ref"
+
+  # Pre-flight check
+  if ! _tui_is_interactive; then
+    return 0
+  fi
+
+  _tui_enter
+
+  while true; do
+    _tui_clear
+    _tui_update_dimensions
+    _tui_draw_header "$title" "$subtitle"
+
+    local max_w=$(( _TUI_COLS - 4 ))
+    (( max_w > 80 )) && max_w=80
+    (( max_w < 36 )) && max_w=36
+
+    local all_mark=" "
+    if (( has_toggle_all )); then
+      local total_sel=0
+      for ((i=1; i<count; i++)); do
+        (( sel[i] )) && total_sel=$((total_sel + 1))
+      done
+      if (( total_sel == count - 1 )); then
+        all_mark="*"
+      elif (( total_sel > 0 )); then
+        all_mark="-"
+      fi
+    fi
+
+    for ((i=0; i<count; i++)); do
+      local mark=" "
+      if (( has_toggle_all && i == 0 )); then
+        mark="$all_mark"
+      else
+        (( sel[i] )) && mark="x"
+      fi
+
+      local label_text="$(_tui_truncate "${labels[i]}" "$((max_w - 10))")"
+      if (( i == cursor )); then
+        printf "  ${_TUI_GREEN}${_TUI_BOLD}> [%s] %s${_TUI_RESET}\n" "$mark" "$label_text" >/dev/tty
+      else
+        printf "    [%s] %s\n" "$mark" "$label_text" >/dev/tty
+      fi
+    done
+
+    if (( has_toggle_all )); then
+      _tui_draw_footer "[↑/↓] Move  [Space] Toggle  [a] Toggle All  [Enter] Confirm  [q] Cancel"
+    else
+      _tui_draw_footer "[↑/↓] Move  [Space] Toggle  [Enter] Confirm  [q] Cancel"
+    fi
+
+    _tui_read_key key
+    case "$key" in
+      UP)
+        if (( cursor > 0 )); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
+        ;;
+      DOWN)
+        if (( cursor < count - 1 )); then cursor=$((cursor + 1)); else cursor=0; fi
+        ;;
+      SPACE)
+        if (( has_toggle_all && cursor == 0 )); then
+          local all_on=1
+          for ((idx=1; idx<count; idx++)); do
+            (( sel[idx] == 0 )) && { all_on=0; break; }
+          done
+          for ((idx=1; idx<count; idx++)); do
+            sel[idx]=$(( 1 - all_on ))
+          done
+        else
+          sel[cursor]=$(( 1 - sel[cursor] ))
+        fi
+        ;;
+      TOGGLE_ALL|ALL)
+        if (( has_toggle_all )); then
+          local all_on=1
+          for ((idx=1; idx<count; idx++)); do
+            (( sel[idx] == 0 )) && { all_on=0; break; }
+          done
+          for ((idx=1; idx<count; idx++)); do
+            sel[idx]=$(( 1 - all_on ))
+          done
+        fi
+        ;;
+      ENTER)
+        break
+        ;;
+      QUIT|ESC)
+        _tui_exit
+        if declare -F handle_cancel >/dev/null 2>&1; then
+          handle_cancel
+        else
+          return 130
+        fi
+        ;;
+      REDRAW)
+        continue
+        ;;
+    esac
+  done
+
+  _tui_exit
+  return 0
 }

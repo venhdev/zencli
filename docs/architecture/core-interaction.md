@@ -24,21 +24,26 @@ Standardized interactive patterns across dotfiles (`core/00-shell-lib.sh`, `inst
 | **Command Runner (`_run_confirm`)** | Execution logging | Echo command `▶ ...`, `_confirm`, log metadata (status, dur, cwd) to state file, exec | Command execution or abort | Requires explicit confirmation |
 | **Command Log & Rerun (`cmdlog` / `clog` / `cr`)** | Audit trail & rerun | View, search keyword, filter by CWD (`-d`), interactive rerun, edit-before-run (`-e`), clip | Interactive menu or direct execution | Fallback to tabular list |
 
-## 2. Terminal Lifecycle Contract
+## 2. Terminal Lifecycle Contract (ADR-003 Standard)
+
+All interactive menus adhere to the Unified TUI Architecture defined in [ADR-003](adr-003-tui-standards.md):
 
 ```text
 [Init / Preflight]
-  ├── Detect TTY: can_prompt_interactively (exec 3<>/dev/tty)
-  ├── Hide Cursor: tput civis >/dev/tty 2>/dev/null || printf "\033[?25l" >/dev/tty
-  └── Install Traps: trap restore_cursor EXIT; trap handle_cancel INT TERM (exit 130)
+  ├── Interactive Safety Check: _tui_is_interactive (graceful bypass in headless/CI)
+  ├── Enter Alternate Buffer: printf "\033[?1049h\033[?25l" >/dev/tty (hide cursor, no scrollback clutter)
+  ├── Setup Raw Terminal: stty -echo -icanon min 1 time 0
+  └── Install Traps: trap _tui_exit EXIT; trap handle_cancel INT TERM (exit 130)
 
 [Render Loop]
-  ├── Clear Screen: printf "\033[H\033[2J" >/dev/tty
-  ├── Keypress Read: IFS= read -rsn1 key < /dev/tty
-  └── Escape Handling: read -rsn2 -t 0.1 for arrow sequences ([A, [B) or j/k
+  ├── Dimension Update: _tui_update_dimensions (enforce max_w <= cols - 4, clamped 36..80)
+  ├── Header & Body: _tui_draw_header, unified design tokens (_TUI_CYAN, _TUI_GREEN, etc.)
+  ├── Zero-Fork Keypress: _tui_read_key (pure-bash normalized events: UP, DOWN, SPACE, ENTER, QUIT)
+  └── Footer: _tui_draw_footer (standardized key hints)
 
 [Teardown / Restore]
-  └── Restore Cursor: tput cnorm >/dev/tty 2>/dev/null || printf "\033[?25h" >/dev/tty
+  ├── Restore Stty: stty "$_TUI_ORIG_STTY"
+  └── Restore Primary Buffer: printf "\033[?25h\033[?1049l" >/dev/tty (zero scrollback pollution)
 ```
 
 ### Engine Signatures

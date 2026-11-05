@@ -28,14 +28,14 @@ A fast, modular, zero-dependency dotfiles system and workstation environment for
 
 #### Interactive TUI Installation:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/venhdev/zenforge/main/install.sh | bash
 ```
 - **TUI Controls:** `[↑/↓]` or `[j/k]` to navigate, `[Space]` to toggle selection, `[a]` to toggle all, `[Enter]` to confirm, `[q]` to cancel.
 - **Auto-Detection:** Automatically detects Zsh vs. Bash, WSL environment, SSH keys in `~/.ssh/`, and automatically hooks PowerShell `$PROFILE` when installing from Git Bash on Windows.
 
 #### Automated Non-Interactive Installation (All Modules):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/install.sh | bash -s -- --all
+curl -fsSL https://raw.githubusercontent.com/venhdev/zenforge/main/install.sh | bash -s -- --all
 ```
 
 ---
@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/install.sh | ba
 
 Open PowerShell (Windows Terminal) and run:
 ```powershell
-irm https://raw.githubusercontent.com/venhdev/zencli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/venhdev/zenforge/main/install.ps1 | iex
 ```
 This configures your PowerShell `$PROFILE`, prepends `~/bin` & `~/.local/bin` to `$env:PATH`, and configures global Git `include.path`.
 
@@ -325,7 +325,7 @@ zen ali git                 # Search aliases matching keyword 'git'
 
 # 6. Agent Skills Management (Vercel Skills CLI)
 zen ski [source]            # Add agent skill(s) from GitHub, URL, or local path
-zen skiv [options]          # Personal skills from venhdev/zencli (auto-targets .agents/skills)
+zen skiv [options]          # Personal skills from venhdev/zenforge (auto-targets .agents/skills)
 zen skiup                   # Update project skills according to lockfile (-p -y)
 zen ski update [skills...]  # Update all (or named) installed skills
 zen ski rm <skill...>       # Remove installed skill(s)
@@ -510,5 +510,5 @@ dotfiles/
 ## 13. Uninstallation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/venhdev/zencli/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/venhdev/zenforge/main/uninstall.sh | bash
 ```

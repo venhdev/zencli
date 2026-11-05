@@ -1,10 +1,10 @@
 # Dotfiles Windows PowerShell Installer
 # Usage:
-#   irm https://raw.githubusercontent.com/venhdev/zencli/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/venhdev/zenforge/main/install.ps1 | iex
 
 [CmdletBinding()]
 param(
-    [string]$RepoUrl = "https://github.com/venhdev/zencli.git",
+    [string]$RepoUrl = "https://github.com/venhdev/zenforge.git",
     [string]$TargetDir = "$env:USERPROFILE\.config\zencli"
 )
 

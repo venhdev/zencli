@@ -180,7 +180,7 @@ Authoritative registry of navigation, system, and dev aliases
             @{ Name = "zen setup"; Cmd = "Modular dotfiles setup & installer"; Desc = "Dotfiles setup" }
             @{ Name = "ins / insdf"; Cmd = "zen / zen setup"; Desc = "Setup shorthand" }
             @{ Name = "zen ski [source]"; Cmd = "npx skills add/rm/ls/update"; Desc = "Agent skills orchestrator" }
-            @{ Name = "zen skiv [opts]"; Cmd = "zen ski venhdev/zencli"; Desc = "Personal skills (default: .agents/skills)" }
+            @{ Name = "zen skiv [opts]"; Cmd = "zen ski venhdev/zenforge"; Desc = "Personal skills (default: .agents/skills)" }
             @{ Name = "zen skiup"; Cmd = "zen ski update -p -y"; Desc = "Update project skills from lockfile" }
         )
         "PYTHON VENV" = @(
@@ -357,7 +357,7 @@ zen ski - Agent Skills Orchestrator (powered by Vercel Skills CLI)
 
 Usage:
   zen ski <source> [options]         Add skill(s) from GitHub, URL, or local path
-  zen skiv [options]                 Personal skills (venhdev/zencli, default: .agents/skills)
+  zen skiv [options]                 Personal skills (venhdev/zenforge, default: .agents/skills)
   zen skiup                          Update project skills according to lockfile (-p -y)
 
 Common Management:
@@ -436,9 +436,9 @@ function _zen_cmd_skiv {
         }
     }
     if (-not $hasAgent) {
-        _zen_cmd_ski -RemainingArgs (@("venhdev/zencli", "-a", "codex") + $RemainingArgs)
+        _zen_cmd_ski -RemainingArgs (@("venhdev/zenforge", "-a", "codex") + $RemainingArgs)
     } else {
-        _zen_cmd_ski -RemainingArgs (@("venhdev/zencli") + $RemainingArgs)
+        _zen_cmd_ski -RemainingArgs (@("venhdev/zenforge") + $RemainingArgs)
     }
 }
 
@@ -660,7 +660,7 @@ Headless Package Management:
 
 Agent Skills Management:
   zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
-  zencli skiv [options]    Personal skills (venhdev/zencli, default: .agents/skills)
+  zencli skiv [options]    Personal skills (venhdev/zenforge, default: .agents/skills)
   zencli skiup             Update project skills according to lockfile (-p -y)
 
 Ecosystem & Workstation:

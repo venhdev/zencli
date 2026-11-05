@@ -475,7 +475,7 @@ EOF
     for c in "${mig_configs[@]}"; do
       if [[ ! -d "$dest_config" ]]; then
         mv "$c" "$dest_config" 2>/dev/null || true
-        git -C "$dest_config" remote set-url origin "https://github.com/venhdev/zencli.git" 2>/dev/null || true
+        git -C "$dest_config" remote set-url origin "https://github.com/venhdev/zenforge.git" 2>/dev/null || true
         log_msg "  ✔ Renamed $c to $dest_config"
       else
         for f in "$c/.installed.json" "$c/local/local.env"; do
@@ -811,7 +811,7 @@ zen ski - Agent Skills Orchestrator (powered by Vercel Skills CLI)
 
 Usage:
   zen ski <source> [options]         Add skill(s) from GitHub, URL, or local path
-  zen skiv [options]                 Personal skills (venhdev/zencli, default: .agents/skills)
+  zen skiv [options]                 Personal skills (venhdev/zenforge, default: .agents/skills)
   zen skiup                          Update project skills according to lockfile (-p -y)
 
 Common Management:
@@ -849,9 +849,9 @@ _zen_cmd_skiv() {
   done
 
   if [[ $has_agent -eq 0 ]]; then
-    _zen_cmd_ski "venhdev/zencli" -a codex "$@"
+    _zen_cmd_ski "venhdev/zenforge" -a codex "$@"
   else
-    _zen_cmd_ski "venhdev/zencli" "$@"
+    _zen_cmd_ski "venhdev/zenforge" "$@"
   fi
 }
 
@@ -1209,7 +1209,7 @@ Headless Package Management:
 
 Agent Skills Management:
   zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
-  zencli skiv [options]    Personal skills (venhdev/zencli, default: .agents/skills)
+  zencli skiv [options]    Personal skills (venhdev/zenforge, default: .agents/skills)
   zencli skiup             Update project skills according to lockfile (-p -y)
 
 Ecosystem & Workstation:

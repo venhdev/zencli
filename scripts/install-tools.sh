@@ -48,17 +48,19 @@ TOOL_REGISTRY=(
   "jq|jq||||Command-line JSON processor|https://jqlang.github.io/jq/"
   "rg|ripgrep|BurntSushi/ripgrep|ripgrep_{ver}_{arch}-unknown-linux-musl.tar.gz|rg|ripgrep line-oriented search tool|https://github.com/BurntSushi/ripgrep"
   "lazygit|lazygit|jesseduffield/lazygit|lazygit_{ver}_Linux_{arch}.tar.gz|lazygit|Simple terminal UI for git commands|https://github.com/jesseduffield/lazygit"
+  "go|golang-go||||Go (golang) open source programming language|https://go.dev"
 )
 
 # CLI Options
 OPT_ALL=0
+TARGET_TOOLS=()
 for arg in "$@"; do
   case "$arg" in
     -a|--all|-y|--yes)
       OPT_ALL=1
       ;;
     -h|--help)
-      echo "Usage: ./install-tools.sh [OPTIONS]"
+      echo "Usage: ./install-tools.sh [OPTIONS] [TOOLS...]"
       echo
       echo "Options:"
       echo "  -a, --all, -y, --yes  Install missing APT packages non-interactively"
@@ -67,6 +69,9 @@ for arg in "$@"; do
       echo "Interactive mode:"
       echo "  Run without arguments to launch the Zen Developer Tools TUI."
       exit 0
+      ;;
+    *)
+      TARGET_TOOLS+=("$arg")
       ;;
   esac
 done
@@ -97,6 +102,9 @@ _get_tool_version() {
         echo "installed"
       fi
       ;;
+    go|golang)
+      go version 2>/dev/null | awk '{sub(/^go/, "", $3); print $3}'
+      ;;
     delta)
       delta --version 2>/dev/null | awk '{print $2}'
       ;;
@@ -126,10 +134,11 @@ _get_apt_candidate() {
   local cand
   cand="$(apt-cache policy "$pkg" 2>/dev/null | grep -i "Candidate:" | awk '{print $2}' || true)"
   if [[ -n "$cand" && "$cand" != "(none)" ]]; then
-    # Strip Debian epoch prefix and build suffixes (e.g., 1:2.47.3-0+deb13u1 -> 2.47.3)
+    # Strip Debian epoch prefix and build suffixes (e.g., 1:2.47.3-0+deb13u1 -> 2.47.3, 2:1.24~2 -> 1.24)
     cand="${cand#*:}"
     cand="${cand%%-*}"
     cand="${cand%%\+*}"
+    cand="${cand%%\~*}"
     echo "$cand"
     return 0
   fi
@@ -184,8 +193,10 @@ _get_github_latest_ver() {
 # Detect Installation Source & Path of a Command
 _detect_origin() {
   local cmd="$1"
+  local probe_cmd="$cmd"
+  [[ "$cmd" == "golang" ]] && probe_cmd="go"
   local bin_path
-  bin_path="$(command -v "$cmd" 2>/dev/null || true)"
+  bin_path="$(command -v "$probe_cmd" 2>/dev/null || true)"
 
   if [[ -z "$bin_path" ]]; then
     echo "NONE|-|-"
@@ -453,22 +464,43 @@ _refresh_inventory() {
 _refresh_inventory
 
 # Non-interactive CLI Mode Handler
-if (( OPT_ALL )); then
-  missing_apt=()
-  missing_gh=()
+_run_cli_mode() {
+  local missing_apt=()
+  local missing_gh=()
+  local i c p matched t
 
   for ((i=0; i<item_count; i++)); do
+    c="${cmds[i]}"
+    p="${apt_pkgs[i]}"
+
+    if (( ${#TARGET_TOOLS[@]} > 0 )); then
+      matched=0
+      for t in "${TARGET_TOOLS[@]}"; do
+        if [[ "$t" == "$c" || "$t" == "$p" || ( "$t" == "golang" && ( "$c" == "go" || "$p" == "golang-go" ) ) || ( "$t" == "ripgrep" && "$c" == "rg" ) ]]; then
+          matched=1
+          break
+        fi
+      done
+      (( matched )) || continue
+    fi
+
     if (( statuses[i] == 0 )); then
       if _is_in_apt "${apt_pkgs[i]}"; then
         missing_apt+=("${apt_pkgs[i]}")
       elif [[ -n "${gh_repos[i]}" ]]; then
         missing_gh+=("${cmds[i]}")
       fi
+    else
+      if (( ${#TARGET_TOOLS[@]} > 0 )); then
+        echo "✔ $c ($p) is already installed ($(_get_tool_version "$c"))."
+      fi
     fi
   done
 
   if (( ${#missing_apt[@]} == 0 && ${#missing_gh[@]} == 0 )); then
-    echo "✔ All registered tools are already installed."
+    if (( OPT_ALL )); then
+      echo "✔ All registered tools are already installed."
+    fi
     exit 0
   fi
 
@@ -489,6 +521,10 @@ if (( OPT_ALL )); then
   echo
   printf "\033[1;32m✔ Non-interactive package processing completed.\033[0m\n"
   exit 0
+}
+
+if (( OPT_ALL )) || (( ${#TARGET_TOOLS[@]} > 0 )); then
+  _run_cli_mode
 fi
 
 # Check interactive TTY capabilities
@@ -753,8 +789,10 @@ _action_review_and_execute() {
     for idx in "${apt_install_indices[@]}" "${apt_update_indices[@]}"; do
       local c="${cmds[idx]}"
       local pkg="${apt_pkgs[idx]}"
-      if command -v "$c" >/dev/null 2>&1; then
-        _manifest_sync_tool "$c" "apt" "$pkg" "$(_get_tool_version "$c")" "$(command -v "$c")" "${gh_repos[idx]}"
+      local probe_c="$c"
+      [[ "$c" == "golang" ]] && probe_c="go"
+      if command -v "$probe_c" >/dev/null 2>&1; then
+        _manifest_sync_tool "$c" "apt" "$pkg" "$(_get_tool_version "$c")" "$(command -v "$probe_c")" "${gh_repos[idx]}"
       fi
     done
   fi
@@ -876,6 +914,10 @@ _render_live_detail() {
     3) action_badge="[-] REMOVE" ;;
   esac
 
+  local alias_info=""
+  [[ "$c" == "go" ]] && alias_info="golang"
+  [[ "$c" == "rg" ]] && alias_info="ripgrep"
+
   local detail_lines=(
     "Description       : $d"
     "Status            : $s"
@@ -884,6 +926,7 @@ _render_live_detail() {
     "Available Version : ${apt_cand:-None}"
     "Managed Origin    : $o"
   )
+  [[ -n "$alias_info" ]] && detail_lines+=("Command Alias     : $alias_info")
 
   # Adapt vertical detail density based on available terminal lines
   if (( lines >= 26 )); then

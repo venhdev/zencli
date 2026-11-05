@@ -811,7 +811,7 @@ zen ski - Agent Skills Orchestrator (powered by Vercel Skills CLI)
 
 Usage:
   zen ski <source> [options]         Add skill(s) from GitHub, URL, or local path
-  zen skiv [options]                 Personal skills (venhdev/skills, default: .agents/skills)
+  zen skiv [options]                 Personal skills (venhdev/zencli, default: .agents/skills)
   zen skiup                          Update project skills according to lockfile (-p -y)
 
 Common Management:
@@ -849,9 +849,9 @@ _zen_cmd_skiv() {
   done
 
   if [[ $has_agent -eq 0 ]]; then
-    _zen_cmd_ski "venhdev/skills" -a codex "$@"
+    _zen_cmd_ski "venhdev/zencli" -a codex "$@"
   else
-    _zen_cmd_ski "venhdev/skills" "$@"
+    _zen_cmd_ski "venhdev/zencli" "$@"
   fi
 }
 
@@ -1209,7 +1209,7 @@ Headless Package Management:
 
 Agent Skills Management:
   zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
-  zencli skiv [options]    Personal skills (venhdev/skills, default: .agents/skills)
+  zencli skiv [options]    Personal skills (venhdev/zencli, default: .agents/skills)
   zencli skiup             Update project skills according to lockfile (-p -y)
 
 Ecosystem & Workstation:

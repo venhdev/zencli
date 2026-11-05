@@ -325,7 +325,7 @@ zen ali git                 # Search aliases matching keyword 'git'
 
 # 6. Agent Skills Management (Vercel Skills CLI)
 zen ski [source]            # Add agent skill(s) from GitHub, URL, or local path
-zen skiv [options]          # Personal skills from venhdev/skills (auto-targets .agents/skills)
+zen skiv [options]          # Personal skills from venhdev/zencli (auto-targets .agents/skills)
 zen skiup                   # Update project skills according to lockfile (-p -y)
 zen ski update [skills...]  # Update all (or named) installed skills
 zen ski rm <skill...>       # Remove installed skill(s)

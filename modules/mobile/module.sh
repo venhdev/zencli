@@ -650,9 +650,42 @@ _shorebird_dart_args() {
   return 0
 }
 
+_shorebird_resolve_flutter_version() {
+  local v=""
+  if [[ -f .fvmrc ]]; then
+    v=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' .fvmrc | head -1)
+  elif [[ -f .fvm/fvm_config.json ]]; then
+    v=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' .fvm/fvm_config.json | head -1)
+  fi
+
+  if [[ -z $v && -d .fvm/flutter_sdk/bin/cache ]]; then
+    v=$(jq -r '.flutterVersion // empty' .fvm/flutter_sdk/bin/cache/flutter.version.json 2>/dev/null)
+  fi
+
+  local fvm_home="${FVM_HOME:-$HOME/fvm}"
+  if [[ -z $v && -L "$fvm_home/default" ]]; then
+    local target
+    target=$(readlink -f "$fvm_home/default" 2>/dev/null)
+    if [[ -f "$target/bin/cache/flutter.version.json" ]]; then
+      v=$(jq -r '.flutterVersion // empty' "$target/bin/cache/flutter.version.json" 2>/dev/null)
+    fi
+    [[ -z $v ]] && v=$(basename "$target")
+  fi
+
+  if [[ -z $v ]] && command -v fvm &>/dev/null; then
+    v=$(fvm flutter --version --machine 2>/dev/null | jq -r '.flutterVersion // empty' 2>/dev/null)
+  fi
+
+  if [[ -z $v ]] && command -v flutter &>/dev/null; then
+    v=$(flutter --version --machine 2>/dev/null | jq -r '.flutterVersion // empty' 2>/dev/null)
+  fi
+
+  echo "${v:-fvm}"
+}
+
 _flsb_release() {
   local dry_run=0
-  local artifact current flavor
+  local artifact current flavor flutter_ver
   local cmd=() args=()
 
   while [[ $# -gt 0 ]]; do
@@ -663,23 +696,22 @@ _flsb_release() {
   done
 
   _shorebird_preflight || return
-  command -v fvm &>/dev/null || {
-    echo "❌ fvm not found (required for --flutter-version=fvm)" >&2
-    return 1
-  }
 
   current=$(_shorebird_version)
   [[ -n $current ]] || {
     echo "❌ version: not found in pubspec.yaml" >&2
     return 1
   }
-  echo "Version: $current"
+  flutter_ver=$(_shorebird_resolve_flutter_version)
+
+  echo "Build version: $current"
+  echo "Flutter version: $flutter_ver"
 
   artifact=$(_shorebird_pick Artifact apk aab apk) || return
   flavor=$(_flutter_pick_flavor) || return
   _flutter_icon_args args || return
 
-  cmd=(shorebird release android --flutter-version=fvm --artifact "$artifact")
+  cmd=(shorebird release android --flutter-version="$flutter_ver" --artifact "$artifact")
   ((dry_run)) && cmd+=(--dry-run)
   [[ -n $flavor ]] && cmd+=(--flavor "$flavor")
 
@@ -691,7 +723,7 @@ _flsb_release() {
 
 _flsb_patch() {
   local dry_run=0
-  local track current flavor
+  local track current flavor flutter_ver
   local cmd=() args=()
 
   while [[ $# -gt 0 ]]; do
@@ -708,12 +740,16 @@ _flsb_patch() {
     echo "❌ version: not found in pubspec.yaml" >&2
     return 1
   }
+  flutter_ver=$(_shorebird_resolve_flutter_version)
+
+  echo "Build version: $current"
+  echo "Flutter version: $flutter_ver"
 
   track=$(_shorebird_pick Track staging staging stable) || return
   flavor=$(_flutter_pick_flavor) || return
   _flutter_icon_args args || return
 
-  cmd=(shorebird patch android --track "$track" --release-version "$current")
+  cmd=(shorebird patch android --flutter-version="$flutter_ver" --track "$track" --release-version "$current")
   ((dry_run)) && cmd+=(--dry-run)
   [[ -n $flavor ]] && cmd+=(--flavor "$flavor")
 

@@ -496,16 +496,70 @@ _flutter_pick_target() {
   done
 }
 
+_flutter_app_name() {
+  local name=""
+  if [[ -f pubspec.yaml ]]; then
+    name=$(awk '/^[[:space:]]*name:[[:space:]]*/ { sub(/^[[:space:]]*name:[[:space:]]*/, ""); gsub(/[[:space:]"\x27]/, ""); print; exit }' pubspec.yaml 2>/dev/null)
+  fi
+  echo "${name:-$(basename "$PWD")}"
+}
+
+_flutter_pick_log_file() {
+  local app_name
+  app_name="$(_flutter_app_name)"
+  local date_str
+  date_str="$(date '+%Y%m%d-%H%M%S')"
+  local default_log="/tmp/flutter-run-${app_name}-${date_str}.log"
+
+  _prompt_gap
+  echo "Log file:" >&2
+  printf "  1) None (default - do not tee to file)\n" >&2
+  printf "  2) Auto: %s\n" "$default_log" >&2
+  printf "  c) Custom file path\n" >&2
+
+  local choice
+  read -rp "Log output (1-2/c, Enter=1): " choice || return 1
+  choice="${choice:-1}"
+
+  case "$choice" in
+    1|n|N|none|NONE)
+      echo ""
+      return 0
+      ;;
+    2|a|A|auto|AUTO)
+      echo "$default_log"
+      return 0
+      ;;
+    c|C|custom)
+      read -rp "Enter log file path: " choice
+      echo "$choice"
+      return 0
+      ;;
+    *)
+      echo "$choice"
+      return 0
+      ;;
+  esac
+}
+
 flr() {
-  local device args=() cmd
+  local device args=() cmd log_file
 
   device=$(_flutter_pick_device) ||
     { echo "❌ No device"; return 1; }
 
   _flutter_args args || return
 
+  log_file=$(_flutter_pick_log_file) || return
+
   cmd=($(_flutter_runner) run -d "$device" "${args[@]}")
-  _run_confirm "${cmd[@]}"
+  if [[ -n "$log_file" ]]; then
+    local cmd_str
+    cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
+    _run_confirm eval "$cmd_str"
+  else
+    _run_confirm "${cmd[@]}"
+  fi
 }
 
 flb() {

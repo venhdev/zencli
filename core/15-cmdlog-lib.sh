@@ -108,8 +108,14 @@ _cmdlog_clean() {
     return 0
   fi
 
-  local tmp_file
-  tmp_file="$(mktemp)"
+  local tmp_file tmp_dir
+  if declare -F _get_zen_tmp_dir >/dev/null 2>&1; then
+    tmp_dir="$(_get_zen_tmp_dir)"
+  else
+    tmp_dir="${TMPDIR:-/tmp}/zencli"
+    [[ -d "$tmp_dir" ]] || mkdir -p "$tmp_dir" 2>/dev/null || true
+  fi
+  tmp_file="$(mktemp "${tmp_dir}/cmdlog.XXXXXX")"
   tail -n "$keep" "$file" > "$tmp_file" && mv "$tmp_file" "$file"
   echo "Cleaned log: kept latest $keep entries (was $total)."
 }

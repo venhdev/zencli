@@ -437,8 +437,8 @@ When the `mobile` module is enabled:
   - `flclean` → `flutter clean`
 - **Shorebird Shortcuts**:
   - `sb` → `shorebird`
-  - `sbr` → `shorebird run`
-  - `sbrp` → `shorebird release`
+  - `sbr` → `shorebird release` (`flsb release`)
+  - `sbp` → `shorebird patch` (`flsb patch`)
 - **Android ADB Shortcuts**:
   - `adbd` → `adb devices`
   - `adbl` → `adb logcat`

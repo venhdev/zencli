@@ -64,11 +64,19 @@ set_editor() {
   # Persist across sessions in ~/.env
   local env_file="$HOME/.env"
   touch "$env_file"
+  local tmp_dir
+  if declare -F _get_zen_tmp_dir >/dev/null 2>&1; then
+    tmp_dir="$(_get_zen_tmp_dir)"
+  else
+    tmp_dir="${TMPDIR:-/tmp}/zencli"
+    [[ -d "$tmp_dir" ]] || mkdir -p "$tmp_dir" 2>/dev/null || true
+  fi
+
   if grep -qE '^[[:space:]]*export[[:space:]]+EDITOR=' "$env_file" 2>/dev/null; then
-    local tmp; tmp="$(mktemp)"
+    local tmp; tmp="$(mktemp "${tmp_dir}/env.XXXXXX")"
     sed "s|^[[:space:]]*export[[:space:]]\+EDITOR=.*|export EDITOR=\"$chosen\"|" "$env_file" > "$tmp" && mv "$tmp" "$env_file"
   elif grep -qE '^[[:space:]]*EDITOR=' "$env_file" 2>/dev/null; then
-    local tmp; tmp="$(mktemp)"
+    local tmp; tmp="$(mktemp "${tmp_dir}/env.XXXXXX")"
     sed "s|^[[:space:]]*EDITOR=.*|EDITOR=\"$chosen\"|" "$env_file" > "$tmp" && mv "$tmp" "$env_file"
   else
     printf 'export EDITOR="%s"\n' "$chosen" >> "$env_file"

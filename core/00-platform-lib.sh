@@ -255,6 +255,13 @@ _get_zen_state_dir() {
   echo "${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
 }
 
+# Dynamic Temporary Cache/Log Directory Resolver
+_get_zen_tmp_dir() {
+  local dir="${TMPDIR:-/tmp}/zencli"
+  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || true
+  echo "$dir"
+}
+
 # Dynamic Command Log File Resolver
 _get_cmdlog_path() {
   local state_dir="$(_get_zen_state_dir)"

@@ -400,7 +400,7 @@ _flutter_pick_platform() {
   local items=(
     "android-apk"
     "android aab"
-    "ios (comming soon)"
+    "ios (coming soon)"
     "web"
   )
   local choice i
@@ -428,8 +428,8 @@ _flutter_pick_platform() {
         echo "appbundle"
         return 0
         ;;
-      3|"ios"|"ios (comming soon)"|"ios (coming soon)")
-        echo "❌ ios is disabled (comming soon)" >&2
+      3|"ios"|"ios (coming soon)"|"ios (comming soon)")
+        echo "❌ ios is disabled (coming soon)" >&2
         _prompt_gap
         ;;
       4|"web")
@@ -505,11 +505,19 @@ _flutter_app_name() {
 }
 
 _flutter_pick_log_file() {
+  local prefix="${1:-flutter-run}"
   local app_name
   app_name="$(_flutter_app_name)"
   local date_str
   date_str="$(date '+%Y%m%d-%H%M%S')"
-  local default_log="/tmp/flutter-run-${app_name}-${date_str}.log"
+  local tmp_dir
+  if declare -F _get_zen_tmp_dir >/dev/null 2>&1; then
+    tmp_dir="$(_get_zen_tmp_dir)"
+  else
+    tmp_dir="${TMPDIR:-/tmp}/zencli"
+    [[ -d "$tmp_dir" ]] || mkdir -p "$tmp_dir" 2>/dev/null || true
+  fi
+  local default_log="${tmp_dir}/${prefix}-${app_name}-${date_str}.log"
 
   _prompt_gap
   echo "Log file:" >&2
@@ -550,7 +558,7 @@ flr() {
 
   _flutter_args args || return
 
-  log_file=$(_flutter_pick_log_file) || return
+  log_file=$(_flutter_pick_log_file "flutter-run") || return
 
   cmd=($(_flutter_runner) run -d "$device" "${args[@]}")
   if [[ -n "$log_file" ]]; then
@@ -563,14 +571,20 @@ flr() {
 }
 
 flb() {
-  local platform="${1:-}" target args=() cmd
+  local platform="${1:-}" target args=() cmd log_file
+  local current flutter_ver
+
+  current=$(_shorebird_version)
+  flutter_ver=$(_shorebird_resolve_flutter_version)
+  [[ -n $current ]] && echo "Build version: $current"
+  echo "Flutter version: $flutter_ver"
 
   case "$platform" in
     apk|"android-apk"|"android apk") platform="apk" ;;
     aab|"android aab"|"android-aab"|appbundle) platform="appbundle" ;;
     web) platform="web" ;;
-    ios*|"ios (comming soon)"|"ios (coming soon)")
-      echo "❌ ios is disabled (comming soon)" >&2
+    ios*|"ios (coming soon)"|"ios (comming soon)")
+      echo "❌ ios is disabled (coming soon)" >&2
       return 1
       ;;
     "")
@@ -588,8 +602,16 @@ flb() {
   _flutter_icon_args args || return
   _flutter_args args "$platform" || return
 
+  log_file=$(_flutter_pick_log_file "flutter-build-${platform}") || return
+
   cmd=($(_flutter_runner) build "$platform" "${args[@]}")
-  _run_confirm "${cmd[@]}"
+  if [[ -n "$log_file" ]]; then
+    local cmd_str
+    cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
+    _run_confirm eval "$cmd_str"
+  else
+    _run_confirm "${cmd[@]}"
+  fi
 }
 
 # --- Shorebird helpers ---
@@ -624,21 +646,72 @@ _shorebird_version() {
   ' pubspec.yaml
 }
 
-# _shorebird_pick <label> <default> <option>...
-_shorebird_pick() {
-  local label="$1" def="$2" v opt
-  shift 2
+_shorebird_pick_artifact() {
+  local items=("apk" "aab") choice i
 
   _prompt_gap
-  read -rp "$label ($*, Enter=$def): " v
-  v="${v:-$def}"
-
-  for opt in "$@"; do
-    [[ $v == "$opt" ]] && { echo "$v"; return; }
+  echo "Artifact:" >&2
+  for i in "${!items[@]}"; do
+    if ((i == 0)); then
+      printf '  %d) %s (default)\n' "$((i+1))" "${items[i]}" >&2
+    else
+      printf '  %d) %s\n' "$((i+1))" "${items[i]}" >&2
+    fi
   done
 
-  echo "❌ $label must be: $* (received: $v)" >&2
-  return 1
+  while true; do
+    read -rp "Select artifact (1-2, Enter=1): " choice || return 1
+    choice="${choice:-1}"
+
+    case "$choice" in
+      1|apk|APK)
+        echo "apk"
+        return 0
+        ;;
+      2|aab|AAB|appbundle|APPBUNDLE)
+        echo "aab"
+        return 0
+        ;;
+      *)
+        echo "❌ Invalid artifact: $choice" >&2
+        _prompt_gap
+        ;;
+    esac
+  done
+}
+
+_shorebird_pick_track() {
+  local items=("staging" "stable") choice i
+
+  _prompt_gap
+  echo "Track:" >&2
+  for i in "${!items[@]}"; do
+    if ((i == 0)); then
+      printf '  %d) %s (default)\n' "$((i+1))" "${items[i]}" >&2
+    else
+      printf '  %d) %s\n' "$((i+1))" "${items[i]}" >&2
+    fi
+  done
+
+  while true; do
+    read -rp "Select track (1-2, Enter=1): " choice || return 1
+    choice="${choice:-1}"
+
+    case "$choice" in
+      1|staging|STAGING)
+        echo "staging"
+        return 0
+        ;;
+      2|stable|STABLE)
+        echo "stable"
+        return 0
+        ;;
+      *)
+        echo "❌ Invalid track: $choice" >&2
+        _prompt_gap
+        ;;
+    esac
+  done
 }
 
 _shorebird_dart_args() {
@@ -685,7 +758,7 @@ _shorebird_resolve_flutter_version() {
 
 _flsb_release() {
   local dry_run=0
-  local artifact current flavor flutter_ver
+  local artifact current flavor flutter_ver log_file
   local cmd=() args=()
 
   while [[ $# -gt 0 ]]; do
@@ -707,9 +780,11 @@ _flsb_release() {
   echo "Build version: $current"
   echo "Flutter version: $flutter_ver"
 
-  artifact=$(_shorebird_pick Artifact apk aab apk) || return
+  artifact=$(_shorebird_pick_artifact) || return
   flavor=$(_flutter_pick_flavor) || return
   _flutter_icon_args args || return
+
+  log_file=$(_flutter_pick_log_file "shorebird-release-${artifact}") || return
 
   cmd=(shorebird release android --flutter-version="$flutter_ver" --artifact "$artifact")
   ((dry_run)) && cmd+=(--dry-run)
@@ -718,12 +793,18 @@ _flsb_release() {
   _shorebird_dart_args args "$flavor" || return
   cmd+=(-- "${args[@]}")
 
-  _run_confirm "${cmd[@]}"
+  if [[ -n "$log_file" ]]; then
+    local cmd_str
+    cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
+    _run_confirm eval "$cmd_str"
+  else
+    _run_confirm "${cmd[@]}"
+  fi
 }
 
 _flsb_patch() {
   local dry_run=0
-  local track current flavor flutter_ver
+  local track current flavor flutter_ver log_file
   local cmd=() args=()
 
   while [[ $# -gt 0 ]]; do
@@ -745,9 +826,11 @@ _flsb_patch() {
   echo "Build version: $current"
   echo "Flutter version: $flutter_ver"
 
-  track=$(_shorebird_pick Track staging staging stable) || return
+  track=$(_shorebird_pick_track) || return
   flavor=$(_flutter_pick_flavor) || return
   _flutter_icon_args args || return
+
+  log_file=$(_flutter_pick_log_file "shorebird-patch-${track}") || return
 
   cmd=(shorebird patch android --flutter-version="$flutter_ver" --track "$track" --release-version "$current")
   ((dry_run)) && cmd+=(--dry-run)
@@ -756,7 +839,13 @@ _flsb_patch() {
   _shorebird_dart_args args "$flavor" || return
   cmd+=(-- "${args[@]}")
 
-  _run_confirm "${cmd[@]}"
+  if [[ -n "$log_file" ]]; then
+    local cmd_str
+    cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
+    _run_confirm eval "$cmd_str"
+  else
+    _run_confirm "${cmd[@]}"
+  fi
 }
 
 _flsb_help() {

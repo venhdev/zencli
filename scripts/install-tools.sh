@@ -48,6 +48,7 @@ TOOL_REGISTRY=(
   "jq|jq||||Command-line JSON processor|https://jqlang.github.io/jq/"
   "rg|ripgrep|BurntSushi/ripgrep|ripgrep_{ver}_{arch}-unknown-linux-musl.tar.gz|rg|ripgrep line-oriented search tool|https://github.com/BurntSushi/ripgrep"
   "lazygit|lazygit|jesseduffield/lazygit|lazygit_{ver}_Linux_{arch}.tar.gz|lazygit|Simple terminal UI for git commands|https://github.com/jesseduffield/lazygit"
+  "uv||astral-sh/uv|uv-{arch}-unknown-linux-gnu.tar.gz|uv|Extremely fast Python package and project manager|https://github.com/astral-sh/uv"
   "go|golang-go||||Go (golang) open source programming language|https://go.dev"
 )
 
@@ -564,6 +565,10 @@ _install_from_github() {
   asset_file="${asset_file//\{os\}/Linux}"
 
   local download_url="https://github.com/${repo}/releases/download/v${ver}/${asset_file}"
+  # Check if repo uses un-prefixed tags (e.g., astral-sh/uv uses 0.13.7 instead of v0.13.7)
+  if ! curl -sI --connect-timeout 3 --fail "$download_url" >/dev/null 2>&1; then
+    download_url="https://github.com/${repo}/releases/download/${ver}/${asset_file}"
+  fi
   local target_dir="$HOME/.local/bin"
 
   # Display Transparency Card

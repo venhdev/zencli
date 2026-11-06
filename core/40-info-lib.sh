@@ -25,7 +25,14 @@ envinfo() {
   _envinfo_probe() {
     local cmd="$1"
     local output_file output rc=0 timed_out=0
-    output_file="$(mktemp)"
+    local tmp_dir
+    if declare -F _get_zen_tmp_dir >/dev/null 2>&1; then
+      tmp_dir="$(_get_zen_tmp_dir)"
+    else
+      tmp_dir="${TMPDIR:-/tmp}/zencli"
+      [[ -d "$tmp_dir" ]] || mkdir -p "$tmp_dir" 2>/dev/null || true
+    fi
+    output_file="$(mktemp "${tmp_dir}/envinfo.XXXXXX")"
 
     (
       eval "$cmd"

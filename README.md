@@ -150,7 +150,7 @@ dirsize /var/log 10
 
 ## 3. Command Audit Log & Smart Re-run
 
-The **Confirmed Command Audit Log** records critical command executions, exit codes, elapsed durations, and working directories in `~/.config/dotfiles/.cmdlog`.
+The **Confirmed Command Audit Log** records critical command executions, exit codes, elapsed durations, and working directories in `~/.config/zencli/.cmdlog`.
 
 ### 📜 View Command Audit Log: `clog`
 
@@ -373,7 +373,7 @@ zen sync                    # Git pull dotfiles repository & re-apply configurat
 
 ## 8. Advanced Git Workflow & Aliases
 
-Global Git aliases configured via `include.path` (`~/.config/dotfiles/.gitconfig`):
+Global Git aliases configured via `include.path` (`~/.config/zencli/.gitconfig`):
 
 | Command | Description | Example |
 | :--- | :--- | :--- |

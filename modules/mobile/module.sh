@@ -126,7 +126,14 @@ adbid() {
 }
 
 # Flutter web browser integration
-_dotfiles_root="${DOTFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles}"
+if declare -F _get_zen_root >/dev/null 2>&1; then
+  _dotfiles_root="$(_get_zen_root)"
+elif declare -F _get_dotfiles_root >/dev/null 2>&1; then
+  _dotfiles_root="$(_get_dotfiles_root)"
+else
+  _dotfiles_root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${ZENCLI:-${DOTFILES:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}"
+  [[ -d "$_dotfiles_root" ]] || _dotfiles_root="$HOME/.config/zencli"
+fi
 _chrome_wrapper="$_dotfiles_root/modules/mobile/chrome-wrapper.sh"
 
 if [[ -z "${CHROME_EXECUTABLE:-}" ]]; then
@@ -231,9 +238,7 @@ _flutter_pick_flavor() {
     f=$(_pick_one "Flavor: " "${flavors[@]}" skip) || return
     [[ $f != skip ]] && echo "$f"
   else
-    _prompt_gap
-    read -rp "Flavor (skip=Enter): " f
-    [[ -n $f ]] && echo "$f"
+    echo "No flavor detected, skipping." >&2
   fi
 
   return 0

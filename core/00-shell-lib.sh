@@ -247,7 +247,11 @@ _print_cmd() {
 
 _run_confirm() {
   printf '\n'
-  _print_cmd "Command:" "$@"
+  if [[ "$1" == "eval" && $# -eq 2 ]]; then
+    printf '▶ Command:\n%s\n' "$2"
+  else
+    _print_cmd "Command:" "$@"
+  fi
 
   _confirm || {
     echo "✗ cancelled"
@@ -261,13 +265,17 @@ _run_confirm() {
   "$@" || rc=$?
 
   local duration=$((SECONDS - start_time))
-  _log_cmd_record "$rc" "$duration" "$cwd" "$@"
+  if [[ "$1" == "eval" && $# -eq 2 ]]; then
+    _log_cmd_record "$rc" "$duration" "$cwd" "$2"
+  else
+    _log_cmd_record "$rc" "$duration" "$cwd" "$@"
+  fi
 
   return $rc
 }
 
 _pick_one() {
-  local PS3="$1" item
+  local PS3="$1" item COLUMNS=1
   shift
 
   (($#)) || return 1

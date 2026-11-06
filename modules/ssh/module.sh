@@ -18,7 +18,7 @@ ssha() {
 
   ((${#keys[@]})) || { echo "No SSH keys found"; return 1; }
 
-  local PS3="SSH key: "
+  local PS3="SSH key: " COLUMNS=1
   select k in "${keys[@]}"; do
     [[ -n $k ]] && { ssh-add "$k"; return; }
   done

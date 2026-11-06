@@ -245,7 +245,7 @@ _flutter_pick_flavor() {
 }
 
 _flutter_pick_mode() {
-  local PS3="Mode: " mode
+  local PS3="Mode: " mode COLUMNS=1
 
   _prompt_gap
   select mode in debug profile release; do

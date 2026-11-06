@@ -53,6 +53,7 @@ conf() {
         fzf --prompt='Config > ' |
         awk '{print $1}') || return
     else
+      local COLUMNS=1
       select l in "${lines[@]}"; do
         [[ -n $l ]] && { k=${l%% *}; break; }
       done

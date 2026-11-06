@@ -217,6 +217,8 @@ _zen_alias_catalog() {
     utils[++n_u] = "zen sync" SEP "git pull & alias reload" SEP "Pull latest commits & refresh shell aliases";
     utils[++n_u] = "zen ali" SEP "alias catalog" SEP "Browse and search all shell & git shortcuts";
     utils[++n_u] = "zen setup" SEP "modular installer" SEP "Run ZenCLI installation & setup wizard";
+    utils[++n_u] = "zen forge" SEP "zenfd orchestrator" SEP "ZenForge build, daemon, MCP & web cockpit manager";
+    utils[++n_u] = "zenf" SEP "zen forge" SEP "Shorthand alias for 'zen forge'";
     utils[++n_u] = "zen ski" SEP "npx skills [action]" SEP "Agent skills orchestrator (Vercel Skills CLI)";
     utils[++n_u] = "zen skiv" SEP "zen ski venhdev/zenforge" SEP "Personal skills (auto-targets .agents/skills)";
     utils[++n_u] = "zen skiup" SEP "zen ski update -p -y" SEP "Update all project skills according to lockfile";

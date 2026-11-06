@@ -48,10 +48,10 @@ opene() {
   explorer "$(winpath "${1:-$PWD}")"
 }
 
-cpath() {
+wcppath() {
   local p
   p=$(winpath "${1:-$PWD}")
-  echo "Copied: $p"
+  echo "Copied (Windows): $p"
   printf '%s' "$p" | clip
 }
 

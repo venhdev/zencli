@@ -207,9 +207,10 @@ _zen_alias_catalog() {
     utils[++n_u] = "pscpu" SEP "ps -eo pid,%cpu" SEP "Show top processes by CPU usage";
     utils[++n_u] = "gete" SEP "printenv [key]" SEP "Inspect or search environment variables";
     utils[++n_u] = "clip" SEP "pbcopy | clip.exe | wl-copy" SEP "Cross-platform clipboard copy helper";
+    utils[++n_u] = "cpwd" SEP "readlink -f | clip" SEP "Copy Linux path of target (default: PWD) to clipboard";
     utils[++n_u] = "opene" SEP "explorer [path]" SEP "Open file or directory in explorer/file manager";
     utils[++n_u] = "winpath" SEP "wslpath -w [path]" SEP "Convert Unix path to Windows format (WSL)";
-    utils[++n_u] = "cpath" SEP "wslpath -w | clip" SEP "Copy Windows path of target to clipboard";
+    utils[++n_u] = "wcppath" SEP "wslpath -w | clip" SEP "Copy Windows path of target (default: PWD) to clipboard";
     utils[++n_u] = "wcp" SEP "cp <win_path> <linux_path>" SEP "Safe file copying between Windows and Linux";
     utils[++n_u] = "ssha" SEP "ssh-agent & ssh-add" SEP "Start SSH agent & interactively select keys";
     utils[++n_u] = "zen doctor" SEP "system diagnostics" SEP "Authoritative inspection & ecosystem audit";

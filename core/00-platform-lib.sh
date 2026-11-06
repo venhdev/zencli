@@ -132,6 +132,15 @@ clip() {
   return 1
 }
 
+# Copy Linux path of target (default: current directory $PWD) to clipboard
+cpwd() {
+  local target="${1:-$PWD}"
+  local abs_path
+  abs_path="$(readlink -f "$target" 2>/dev/null || realpath "$target" 2>/dev/null || echo "$target")"
+  printf '%s' "$abs_path" | clip
+  echo "Copied (Linux): $abs_path"
+}
+
 # Cross-platform file / URL opener
 open_target() {
   local target="${1:-.}"

@@ -49,6 +49,7 @@ TOOL_REGISTRY=(
   "rg|ripgrep|BurntSushi/ripgrep|ripgrep_{ver}_{arch}-unknown-linux-musl.tar.gz|rg|ripgrep line-oriented search tool|https://github.com/BurntSushi/ripgrep"
   "lazygit|lazygit|jesseduffield/lazygit|lazygit_{ver}_Linux_{arch}.tar.gz|lazygit|Simple terminal UI for git commands|https://github.com/jesseduffield/lazygit"
   "uv||astral-sh/uv|uv-{arch}-unknown-linux-gnu.tar.gz|uv|Extremely fast Python package and project manager|https://github.com/astral-sh/uv"
+  "zenfd||venhdev/zenforge|zenfd_{ver}_{os_lower}_{arch_go}.tar.gz|zenfd|ZenForge multi-agent state daemon & cockpit|https://github.com/venhdev/zenforge"
   "go|golang-go||||Go (golang) open source programming language|https://go.dev"
 )
 
@@ -559,10 +560,17 @@ _install_from_github() {
   fi
 
   # Render asset filename from pattern
+  local os_name="Linux"
+  local os_lower="linux"
+  local arch_go="amd64"
+  [[ "$arch" == "arm64" ]] && arch_go="arm64"
+
   local asset_file="$asset_pattern"
   asset_file="${asset_file//\{ver\}/$ver}"
   asset_file="${asset_file//\{arch\}/$arch}"
-  asset_file="${asset_file//\{os\}/Linux}"
+  asset_file="${asset_file//\{arch_go\}/$arch_go}"
+  asset_file="${asset_file//\{os\}/$os_name}"
+  asset_file="${asset_file//\{os_lower\}/$os_lower}"
 
   local download_url="https://github.com/${repo}/releases/download/v${ver}/${asset_file}"
   # Check if repo uses un-prefixed tags (e.g., astral-sh/uv uses 0.13.7 instead of v0.13.7)

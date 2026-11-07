@@ -801,7 +801,7 @@ EOF
     echo " • Daemon Mod   : $daemon_dir"
     echo " • Go Toolchain : $go_ver"
     echo " • Web Manager  : $node_pkg_mgr"
-    echo " • Target Path  : $HOME/.local/bin/zenf (and symlink ~/.local/bin/zenfd)"
+    echo " • Target Path  : $HOME/.local/bin/zenf"
     echo "────────────────────────────────────────────────────────────────────────"
 
     if ((${#missing[@]} > 0)); then
@@ -834,9 +834,8 @@ EOF
       if [[ -f "$bin_src" ]]; then
         mkdir -p "$HOME/.local/bin"
         install -m 755 "$bin_src" "$HOME/.local/bin/zenf"
-        ln -sf "$HOME/.local/bin/zenf" "$HOME/.local/bin/zenfd"
+        rm -f "$HOME/.local/bin/zenfd"
         echo "  ✔ Successfully installed: $HOME/.local/bin/zenf"
-        echo "  ✔ Created compatibility symlink: $HOME/.local/bin/zenfd -> zenf"
         "$HOME/.local/bin/zenf" --version 2>/dev/null || true
         return 0
       else
@@ -903,7 +902,7 @@ EOF
   echo " • Version      : v${ver}"
   echo " • Platform     : ${os_type}/${arch_type}"
   echo " • Asset        : ${asset_name}"
-  echo " • Target Path  : $HOME/.local/bin/zenf (and symlink ~/.local/bin/zenfd)"
+  echo " • Target Path  : $HOME/.local/bin/zenf"
   echo "────────────────────────────────────────────────────────────────────────"
 
   local tmp_dir
@@ -937,10 +936,9 @@ EOF
   if [[ -n "$extracted_bin" && -f "$extracted_bin" ]]; then
     mkdir -p "$HOME/.local/bin"
     install -m 755 "$extracted_bin" "$HOME/.local/bin/zenf"
-    ln -sf "$HOME/.local/bin/zenf" "$HOME/.local/bin/zenfd"
+    rm -f "$HOME/.local/bin/zenfd"
     rm -rf "$tmp_dir"
     echo "  ✔ Successfully installed: $HOME/.local/bin/zenf"
-    echo "  ✔ Created compatibility symlink: $HOME/.local/bin/zenfd -> zenf"
     "$HOME/.local/bin/zenf" --version 2>/dev/null || true
     echo "✅ ZenForge (zenf) is ready to use."
     return 0

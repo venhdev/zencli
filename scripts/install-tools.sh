@@ -49,7 +49,7 @@ TOOL_REGISTRY=(
   "rg|ripgrep|BurntSushi/ripgrep|ripgrep_{ver}_{arch}-unknown-linux-musl.tar.gz|rg|ripgrep line-oriented search tool|https://github.com/BurntSushi/ripgrep"
   "lazygit|lazygit|jesseduffield/lazygit|lazygit_{ver}_Linux_{arch}.tar.gz|lazygit|Simple terminal UI for git commands|https://github.com/jesseduffield/lazygit"
   "uv||astral-sh/uv|uv-{arch}-unknown-linux-gnu.tar.gz|uv|Extremely fast Python package and project manager|https://github.com/astral-sh/uv"
-  "zenfd||venhdev/zenforge|zenfd_{ver}_{os_lower}_{arch_go}.tar.gz|zenfd|ZenForge multi-agent state daemon & cockpit|https://github.com/venhdev/zenforge"
+  "zenf||venhdev/zenforge|zenf_{ver}_{os_lower}_{arch_go}.tar.gz|zenf|ZenForge multi-agent state daemon & cockpit|https://github.com/venhdev/zenforge"
   "go|golang-go||||Go (golang) open source programming language|https://go.dev"
 )
 

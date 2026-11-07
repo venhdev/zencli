@@ -801,7 +801,7 @@ EOF
     echo " • Daemon Mod   : $daemon_dir"
     echo " • Go Toolchain : $go_ver"
     echo " • Web Manager  : $node_pkg_mgr"
-    echo " • Target Path  : $HOME/.local/bin/zenfd"
+    echo " • Target Path  : $HOME/.local/bin/zenf (and symlink ~/.local/bin/zenfd)"
     echo "────────────────────────────────────────────────────────────────────────"
 
     if ((${#missing[@]} > 0)); then
@@ -815,7 +815,7 @@ EOF
 
     local confirm=""
     if [[ -t 0 ]]; then
-      read -r -p "Proceed to build and install zenfd to ~/.local/bin? [y/N]: " confirm
+      read -r -p "Proceed to build and install zenf to ~/.local/bin? [y/N]: " confirm
     else
       read -r confirm || confirm="n"
     fi
@@ -829,15 +829,18 @@ EOF
 
     echo "==> Building ZenForge single-binary control plane (daemon + embedded web)..."
     if (cd "$daemon_dir" && make build); then
-      local bin_src="$daemon_dir/bin/zenfd"
+      local bin_src="$daemon_dir/bin/zenf"
+      [[ ! -f "$bin_src" && -f "$daemon_dir/bin/zenfd" ]] && bin_src="$daemon_dir/bin/zenfd"
       if [[ -f "$bin_src" ]]; then
         mkdir -p "$HOME/.local/bin"
-        install -m 755 "$bin_src" "$HOME/.local/bin/zenfd"
-        echo "  ✔ Successfully installed: $HOME/.local/bin/zenfd"
-        "$HOME/.local/bin/zenfd" --version 2>/dev/null || true
+        install -m 755 "$bin_src" "$HOME/.local/bin/zenf"
+        ln -sf "$HOME/.local/bin/zenf" "$HOME/.local/bin/zenfd"
+        echo "  ✔ Successfully installed: $HOME/.local/bin/zenf"
+        echo "  ✔ Created compatibility symlink: $HOME/.local/bin/zenfd -> zenf"
+        "$HOME/.local/bin/zenf" --version 2>/dev/null || true
         return 0
       else
-        echo "❌ Build artifact $bin_src not found." >&2
+        echo "❌ Build artifact not found in $daemon_dir/bin/." >&2
         return 1
       fi
     else
@@ -886,8 +889,13 @@ EOF
 
   local ext="tar.gz"
   [[ "$os_type" == "windows" ]] && ext="zip"
-  local asset_name="zenfd_${ver}_${os_type}_${arch_type}.${ext}"
+  # Try zenf first, fallback to zenfd for older releases
+  local asset_name="zenf_${ver}_${os_type}_${arch_type}.${ext}"
   local download_url="https://github.com/${repo}/releases/download/v${ver}/${asset_name}"
+  if ! curl -sI --connect-timeout 3 --fail "$download_url" >/dev/null 2>&1; then
+    asset_name="zenfd_${ver}_${os_type}_${arch_type}.${ext}"
+    download_url="https://github.com/${repo}/releases/download/v${ver}/${asset_name}"
+  fi
 
   echo "────────────────────────────────────────────────────────────────────────"
   echo " [ZENFORGE OFFICIAL PRE-BUILT BINARY]"
@@ -895,7 +903,7 @@ EOF
   echo " • Version      : v${ver}"
   echo " • Platform     : ${os_type}/${arch_type}"
   echo " • Asset        : ${asset_name}"
-  echo " • Target Path  : $HOME/.local/bin/zenfd (Zero-build)"
+  echo " • Target Path  : $HOME/.local/bin/zenf (and symlink ~/.local/bin/zenfd)"
   echo "────────────────────────────────────────────────────────────────────────"
 
   local tmp_dir
@@ -907,27 +915,34 @@ EOF
     return 1
   fi
 
-  echo "==> Extracting and installing to $HOME/.local/bin/zenfd..."
+  echo "==> Extracting and installing to $HOME/.local/bin/zenf..."
   if [[ "$ext" == "tar.gz" ]]; then
     tar -xzf "$tmp_dir/$asset_name" -C "$tmp_dir"
   else
     unzip -q "$tmp_dir/$asset_name" -d "$tmp_dir"
   fi
 
-  local extracted_bin="$tmp_dir/zenfd"
-  [[ "$os_type" == "windows" && -f "$tmp_dir/zenfd.exe" ]] && extracted_bin="$tmp_dir/zenfd.exe"
+  local extracted_bin=""
+  for cand in "$tmp_dir/zenf" "$tmp_dir/zenfd" "$tmp_dir/zenf.exe" "$tmp_dir/zenfd.exe"; do
+    if [[ -f "$cand" ]]; then
+      extracted_bin="$cand"
+      break
+    fi
+  done
 
-  if [[ ! -f "$extracted_bin" ]]; then
-    extracted_bin="$(find "$tmp_dir" -type f -name "zenfd*" ! -name "*.tar.gz" ! -name "*.zip" | head -n 1)"
+  if [[ -z "$extracted_bin" ]]; then
+    extracted_bin="$(find "$tmp_dir" -type f \( -name "zenf*" -o -name "zenfd*" \) ! -name "*.tar.gz" ! -name "*.zip" | head -n 1)"
   fi
 
-  if [[ -f "$extracted_bin" ]]; then
+  if [[ -n "$extracted_bin" && -f "$extracted_bin" ]]; then
     mkdir -p "$HOME/.local/bin"
-    install -m 755 "$extracted_bin" "$HOME/.local/bin/zenfd"
+    install -m 755 "$extracted_bin" "$HOME/.local/bin/zenf"
+    ln -sf "$HOME/.local/bin/zenf" "$HOME/.local/bin/zenfd"
     rm -rf "$tmp_dir"
-    echo "  ✔ Successfully installed: $HOME/.local/bin/zenfd"
-    "$HOME/.local/bin/zenfd" --version 2>/dev/null || true
-    echo "✅ ZenForge (zenfd) is ready to use."
+    echo "  ✔ Successfully installed: $HOME/.local/bin/zenf"
+    echo "  ✔ Created compatibility symlink: $HOME/.local/bin/zenfd -> zenf"
+    "$HOME/.local/bin/zenf" --version 2>/dev/null || true
+    echo "✅ ZenForge (zenf) is ready to use."
     return 0
   else
     echo "❌ Could not find extracted binary in release package." >&2
@@ -947,7 +962,7 @@ _zen_cmd_install() {
     echo
     echo "Usage:" >&2
     echo "  zen i <pkg...>                     Install system package(s) or managed tool(s)" >&2
-    echo "  zen i zenforge                     Install official pre-built zenfd to ~/.local/bin" >&2
+    echo "  zen i zenforge                     Install official pre-built zenf to ~/.local/bin" >&2
     echo "  zen i zenforge --source <path>     Audit requirements, build from source & install" >&2
     echo "  zen i --all                        Batch install all missing managed tools" >&2
     return 1
@@ -959,7 +974,7 @@ _zen_cmd_install() {
     return $?
   fi
 
-  if [[ "$1" == "zenforge" || "$1" == "zenfd" ]]; then
+  if [[ "$1" == "zenforge" || "$1" == "zenf" || "$1" == "zenfd" ]]; then
     shift
     _zen_install_zenforge "$@"
     return $?

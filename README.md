@@ -306,8 +306,8 @@ Unified command gateway and workstation orchestrator managing system packages, d
 zen tui
 
 # 2. Headless Developer Tool Provisioning
-zen i --all                 # Batch install missing managed tools (git, curl, jq, rg, lazygit, uv, zenfd)
-zen i zenforge              # Install official pre-built zenfd to ~/.local/bin
+zen i --all                 # Batch install missing managed tools (git, curl, jq, rg, lazygit, uv, zenf)
+zen i zenforge              # Install official pre-built zenf to ~/.local/bin
 zen i zenforge -s <path>    # Audit requirements, build from source & install
 zen i ripgrep lazygit       # Install package(s) or tools (shorthand: ins)
 zen rm jq                   # Uninstall package(s)

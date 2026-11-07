@@ -690,11 +690,6 @@ zencli() {
       _zen_cmd_ski update -p -y "$@"
       ;;
 
-    forge|f)
-      shift
-      _zen_cmd_forge "$@"
-      ;;
-
     --all|-a)
       local installer="$dotfiles_root/scripts/install-tools.sh"
       if [[ -f "$installer" ]]; then
@@ -721,195 +716,224 @@ zencli() {
   esac
 }
 
-# Dynamic ZenForge Source Resolver
-_get_zenforge_root() {
-  if [[ -n "${ZENFORGE_DIR:-}" && -d "$ZENFORGE_DIR" ]]; then
-    echo "$ZENFORGE_DIR"
-    return 0
-  fi
-  if [[ -n "${ZENFORGE_ROOT:-}" && -d "$ZENFORGE_ROOT" ]]; then
-    echo "$ZENFORGE_ROOT"
-    return 0
-  fi
+# ==============================================================================
+# ZENFORGE INSTALLER (Production Pre-built & Local Source Build)
+# ==============================================================================
+_zen_install_zenforge() {
+  local source_path=""
+  local requested_ver=""
 
-  local cur="$PWD"
-  while [[ "$cur" != "/" && -n "$cur" ]]; do
-    if [[ -d "$cur/apps/daemon" && -f "$cur/apps/daemon/go.mod" ]]; then
-      echo "$cur"
-      return 0
-    fi
-    cur="$(dirname "$cur")"
-  done
-
-  local candidate
-  for candidate in \
-    "$HOME/src/owner/zenforge" \
-    "$HOME/src/zenforge" \
-    "$HOME/projects/zenforge" \
-    "$HOME/zenforge"; do
-    if [[ -d "$candidate/apps/daemon" ]]; then
-      echo "$candidate"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-_zen_forge_build_and_install() {
-  local use_local=0
-  for arg in "$@"; do
-    [[ "$arg" == "--local" || "$arg" == "-l" ]] && use_local=1
-  done
-
-  echo "==> Preparing ZenForge (zenfd) build & installation..."
-
-  # Preflight check build prerequisites
-  local missing=()
-  command -v go >/dev/null 2>&1 || missing+=("go")
-  command -v git >/dev/null 2>&1 || missing+=("git")
-  command -v pnpm >/dev/null 2>&1 || command -v npm >/dev/null 2>&1 || missing+=("pnpm/npm")
-
-  if ((${#missing[@]} > 0)); then
-    echo "❌ Missing build dependencies: ${missing[*]}" >&2
-    echo "💡 Run 'zen i ${missing[0]}' or ensure go and pnpm are installed." >&2
-    return 1
-  fi
-
-  local src_dir=""
-  local is_tmp=0
-
-  if ((use_local)); then
-    src_dir="$(_get_zenforge_root 2>/dev/null || true)"
-    if [[ -z "$src_dir" || ! -d "$src_dir" ]]; then
-      echo "❌ Error: --local specified but ZenForge repository was not found." >&2
-      return 1
-    fi
-    echo "  ✔ Using local source: $src_dir"
-  else
-    local tmp_base="$(_get_zen_tmp_dir)"
-    src_dir="$tmp_base/build-zenforge"
-    is_tmp=1
-    echo "  ✔ Cloning fresh ZenForge repository into $src_dir..."
-    rm -rf "$src_dir"
-    mkdir -p "$tmp_base"
-    if ! git clone --depth 1 https://github.com/venhdev/zenforge.git "$src_dir"; then
-      echo "❌ Error: Failed to clone ZenForge repository." >&2
-      rm -rf "$src_dir"
-      return 1
-    fi
-  fi
-
-  local daemon_dir="$src_dir/apps/daemon"
-  if [[ ! -d "$daemon_dir" ]]; then
-    echo "❌ Error: apps/daemon directory not found in $src_dir." >&2
-    ((is_tmp)) && rm -rf "$src_dir"
-    return 1
-  fi
-
-  echo "==> Building ZenForge single-binary control plane (daemon + embedded web)..."
-  if (cd "$daemon_dir" && make build); then
-    local bin_src="$daemon_dir/bin/zenfd"
-    if [[ -f "$bin_src" ]]; then
-      mkdir -p "$HOME/.local/bin"
-      install -m 755 "$bin_src" "$HOME/.local/bin/zenfd"
-      echo "  ✔ Successfully installed: $HOME/.local/bin/zenfd"
-      "$HOME/.local/bin/zenfd" --version 2>/dev/null || true
-    else
-      echo "❌ Build artifact $bin_src not found." >&2
-      ((is_tmp)) && rm -rf "$src_dir"
-      return 1
-    fi
-  else
-    echo "❌ Build failed inside $daemon_dir." >&2
-    ((is_tmp)) && rm -rf "$src_dir"
-    return 1
-  fi
-
-  ((is_tmp)) && rm -rf "$src_dir"
-  echo "✅ ZenForge (zenfd) installation completed successfully."
-  return 0
-}
-
-_zen_cmd_forge() {
-  local action="${1:-}"
-  case "$action" in
-    install|i|build)
-      shift
-      _zen_forge_build_and_install "$@"
-      ;;
-
-    start|run|web|daemon)
-      shift
-      local zenfd_bin
-      zenfd_bin="$(command -v zenfd 2>/dev/null || echo "$HOME/.local/bin/zenfd")"
-      if [[ ! -x "$zenfd_bin" ]]; then
-        echo "❌ zenfd binary not found. Running 'zen forge install' first..."
-        _zen_forge_build_and_install || return 1
-        zenfd_bin="$HOME/.local/bin/zenfd"
-      fi
-      local port="${1:-1123}"
-      echo "==> Starting ZenForge control plane & web cockpit on port $port..."
-      echo "👉 Web dashboard: http://localhost:$port"
-      exec "$zenfd_bin" daemon --port "$port" "$@"
-      ;;
-
-    mcp)
-      shift
-      local zenfd_bin
-      zenfd_bin="$(command -v zenfd 2>/dev/null || echo "$HOME/.local/bin/zenfd")"
-      if [[ ! -x "$zenfd_bin" ]]; then
-        echo "❌ zenfd binary not found. Running 'zen forge install' first..."
-        _zen_forge_build_and_install || return 1
-        zenfd_bin="$HOME/.local/bin/zenfd"
-      fi
-      local client="${1:-agy}"
-      echo "==> Configuring ZenForge MCP for client: $client..."
-      "$zenfd_bin" mcp setup --client "$client"
-      ;;
-
-    status)
-      shift
-      local zenfd_bin
-      zenfd_bin="$(command -v zenfd 2>/dev/null || echo "$HOME/.local/bin/zenfd")"
-      if [[ -x "$zenfd_bin" ]]; then
-        "$zenfd_bin" status "$@"
-      else
-        echo "❌ zenfd binary not found. Run 'zen forge install' to set up." >&2
-        return 1
-      fi
-      ;;
-
-    -h|--help|help|"")
-      cat <<'EOF'
-zen forge - ZenForge Control Plane & Tool Orchestrator
-
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --source|-s|--src)
+        source_path="$2"
+        shift 2
+        ;;
+      --version|-v)
+        requested_ver="$2"
+        shift 2
+        ;;
+      -h|--help)
+        cat <<'EOF'
 Usage:
-  zen forge <command> [options]
+  zen i zenforge                      Download & install latest official pre-built binary
+  zen i zenforge --version <v>        Install specific GitHub release version
+  zen i zenforge --source <path>      Verify requirements, build from source & install
 
-Commands:
-  install, i [--local]   Build & install zenfd single binary to ~/.local/bin
-  start, web [port]      Start daemon & embedded web cockpit (default: 1123)
-  mcp [client]           Configure MCP server for AI client (agy, claude, cursor, opencode)
-  status                 Check health of ZenForge daemon
-
-Shorthand:
-  zen i zenforge         Alias for 'zen forge install'
+Options:
+  -s, --source <path>   Path to local zenforge repository (contains apps/daemon)
+  -v, --version <v>     Specific version tag to download (e.g. 0.2.1)
 EOF
-      ;;
+        return 0
+        ;;
+      *)
+        echo "❌ Unknown option for zenforge installer: '$1'" >&2
+        echo "Run 'zen i zenforge --help' for usage." >&2
+        return 1
+        ;;
+    esac
+  done
 
-    *)
-      local zenfd_bin
-      zenfd_bin="$(command -v zenfd 2>/dev/null || echo "$HOME/.local/bin/zenfd")"
-      if [[ -x "$zenfd_bin" ]]; then
-        "$zenfd_bin" "$action" "$@"
+  # ----------------------------------------------------------------------------
+  # Chế độ 1: Build từ Local Source Path (Explicit Developer Mode)
+  # ----------------------------------------------------------------------------
+  if [[ -n "$source_path" ]]; then
+    # Normalize absolute path
+    if [[ ! -d "$source_path" ]]; then
+      echo "❌ Error: Specified source directory does not exist: $source_path" >&2
+      return 1
+    fi
+    local abs_src
+    abs_src="$(cd "$source_path" && pwd -P)"
+
+    local daemon_dir="$abs_src/apps/daemon"
+    local web_dir="$abs_src/apps/web"
+
+    if [[ ! -d "$daemon_dir" || ! -f "$daemon_dir/go.mod" ]]; then
+      echo "❌ Error: '$abs_src' is not a valid ZenForge repository." >&2
+      echo "   Missing required directory: apps/daemon/ with go.mod" >&2
+      return 1
+    fi
+
+    # Preflight Check Toolchains
+    local missing=()
+    command -v go >/dev/null 2>&1 || missing+=("go (>= 1.24)")
+    command -v make >/dev/null 2>&1 || missing+=("make")
+    if ! command -v pnpm >/dev/null 2>&1 && ! command -v npm >/dev/null 2>&1; then
+      missing+=("pnpm or npm")
+    fi
+
+    local go_ver="not found"
+    if command -v go >/dev/null 2>&1; then
+      go_ver="$(go version 2>/dev/null | awk '{print $3}')"
+    fi
+
+    local node_pkg_mgr="none"
+    if command -v pnpm >/dev/null 2>&1; then
+      node_pkg_mgr="pnpm ($(pnpm --version 2>/dev/null))"
+    elif command -v npm >/dev/null 2>&1; then
+      node_pkg_mgr="npm ($(npm --version 2>/dev/null))"
+    fi
+
+    echo "────────────────────────────────────────────────────────────────────────"
+    echo " [ZENFORGE LOCAL SOURCE BUILD AUDIT]"
+    echo " • Source Path  : $abs_src"
+    echo " • Daemon Mod   : $daemon_dir"
+    echo " • Go Toolchain : $go_ver"
+    echo " • Web Manager  : $node_pkg_mgr"
+    echo " • Target Path  : $HOME/.local/bin/zenfd"
+    echo "────────────────────────────────────────────────────────────────────────"
+
+    if ((${#missing[@]} > 0)); then
+      echo "❌ Preflight failed! Missing required build toolchain(s):" >&2
+      for m in "${missing[@]}"; do
+        echo "   - $m" >&2
+      done
+      echo "💡 Please install missing tools before building from source." >&2
+      return 1
+    fi
+
+    local confirm=""
+    if [[ -t 0 ]]; then
+      read -r -p "Proceed to build and install zenfd to ~/.local/bin? [y/N]: " confirm
+    else
+      read -r confirm || confirm="n"
+    fi
+    case "$confirm" in
+      [yY]|[yY][eE][sS]) ;;
+      *)
+        echo "[-] Build canceled by user."
+        return 0
+        ;;
+    esac
+
+    echo "==> Building ZenForge single-binary control plane (daemon + embedded web)..."
+    if (cd "$daemon_dir" && make build); then
+      local bin_src="$daemon_dir/bin/zenfd"
+      if [[ -f "$bin_src" ]]; then
+        mkdir -p "$HOME/.local/bin"
+        install -m 755 "$bin_src" "$HOME/.local/bin/zenfd"
+        echo "  ✔ Successfully installed: $HOME/.local/bin/zenfd"
+        "$HOME/.local/bin/zenfd" --version 2>/dev/null || true
+        return 0
       else
-        echo "❌ Unknown command 'zen forge $action' and zenfd is not installed." >&2
-        echo "Run 'zen forge --help' for usage." >&2
+        echo "❌ Build artifact $bin_src not found." >&2
         return 1
       fi
-      ;;
+    else
+      echo "❌ Build failed inside $daemon_dir." >&2
+      return 1
+    fi
+  fi
+
+  # ----------------------------------------------------------------------------
+  # Chế độ 2: Tải Pre-built Binary từ GitHub Release (Production Zero-Build)
+  # ----------------------------------------------------------------------------
+  local repo="venhdev/zenforge"
+  local os_type
+  case "$(uname -s 2>/dev/null)" in
+    Linux*)   os_type="linux" ;;
+    Darwin*)  os_type="darwin" ;;
+    MINGW*|MSYS*|CYGWIN*) os_type="windows" ;;
+    *)        os_type="linux" ;;
   esac
+
+  local arch_type
+  case "$(uname -m 2>/dev/null)" in
+    x86_64|amd64)   arch_type="amd64" ;;
+    aarch64|arm64)  arch_type="arm64" ;;
+    *)              arch_type="amd64" ;;
+  esac
+
+  echo "==> Resolving ZenForge release from GitHub (${repo})..."
+  local ver="$requested_ver"
+  if [[ -z "$ver" ]]; then
+    ver="$(curl -s --connect-timeout 4 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | grep -Po '"tag_name":\s*"\K[^"]*' || true)"
+    if [[ -z "$ver" ]]; then
+      local redirect_url
+      redirect_url="$(curl -sI --connect-timeout 4 "https://github.com/${repo}/releases/latest" 2>/dev/null | grep -i '^location:' | awk '{print $2}' | tr -d '\r\n' || true)"
+      if [[ "$redirect_url" =~ /tag/([^/]+)$ ]]; then
+        ver="${BASH_REMATCH[1]}"
+      fi
+    fi
+  fi
+
+  ver="${ver#v}"
+  if [[ -z "$ver" || "$ver" == "unknown" ]]; then
+    echo "❌ Error: Unable to resolve latest release version from https://github.com/${repo}/releases." >&2
+    return 1
+  fi
+
+  local ext="tar.gz"
+  [[ "$os_type" == "windows" ]] && ext="zip"
+  local asset_name="zenfd_${ver}_${os_type}_${arch_type}.${ext}"
+  local download_url="https://github.com/${repo}/releases/download/v${ver}/${asset_name}"
+
+  echo "────────────────────────────────────────────────────────────────────────"
+  echo " [ZENFORGE OFFICIAL PRE-BUILT BINARY]"
+  echo " • Repository   : https://github.com/${repo}"
+  echo " • Version      : v${ver}"
+  echo " • Platform     : ${os_type}/${arch_type}"
+  echo " • Asset        : ${asset_name}"
+  echo " • Target Path  : $HOME/.local/bin/zenfd (Zero-build)"
+  echo "────────────────────────────────────────────────────────────────────────"
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  echo "==> Downloading ${download_url}..."
+  if ! curl -sL --fail "$download_url" -o "$tmp_dir/$asset_name"; then
+    echo "❌ Download failed for ${download_url}" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  echo "==> Extracting and installing to $HOME/.local/bin/zenfd..."
+  if [[ "$ext" == "tar.gz" ]]; then
+    tar -xzf "$tmp_dir/$asset_name" -C "$tmp_dir"
+  else
+    unzip -q "$tmp_dir/$asset_name" -d "$tmp_dir"
+  fi
+
+  local extracted_bin="$tmp_dir/zenfd"
+  [[ "$os_type" == "windows" && -f "$tmp_dir/zenfd.exe" ]] && extracted_bin="$tmp_dir/zenfd.exe"
+
+  if [[ ! -f "$extracted_bin" ]]; then
+    extracted_bin="$(find "$tmp_dir" -type f -name "zenfd*" ! -name "*.tar.gz" ! -name "*.zip" | head -n 1)"
+  fi
+
+  if [[ -f "$extracted_bin" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    install -m 755 "$extracted_bin" "$HOME/.local/bin/zenfd"
+    rm -rf "$tmp_dir"
+    echo "  ✔ Successfully installed: $HOME/.local/bin/zenfd"
+    "$HOME/.local/bin/zenfd" --version 2>/dev/null || true
+    echo "✅ ZenForge (zenfd) is ready to use."
+    return 0
+  else
+    echo "❌ Could not find extracted binary in release package." >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
 }
 
 # zen: Terminal shorthand alias/wrapper for zencli
@@ -917,19 +941,15 @@ zen() {
   zencli "$@"
 }
 
-# zenf: Shorthand alias/wrapper for 'zen forge'
-zenf() {
-  zencli forge "$@"
-}
-
 _zen_cmd_install() {
   if [[ $# -eq 0 ]]; then
     echo "❌ Error: Missing package name or option." >&2
     echo
     echo "Usage:" >&2
-    echo "  zen i <pkg...>       Install system package(s) or managed tool(s)" >&2
-    echo "  zen i zenforge       Build and install ZenForge (zenfd) to ~/.local/bin" >&2
-    echo "  zen i --all          Batch install all missing managed tools" >&2
+    echo "  zen i <pkg...>                     Install system package(s) or managed tool(s)" >&2
+    echo "  zen i zenforge                     Install official pre-built zenfd to ~/.local/bin" >&2
+    echo "  zen i zenforge --source <path>     Audit requirements, build from source & install" >&2
+    echo "  zen i --all                        Batch install all missing managed tools" >&2
     return 1
   fi
 
@@ -941,7 +961,7 @@ _zen_cmd_install() {
 
   if [[ "$1" == "zenforge" || "$1" == "zenfd" ]]; then
     shift
-    _zen_forge_build_and_install "$@"
+    _zen_install_zenforge "$@"
     return $?
   fi
 

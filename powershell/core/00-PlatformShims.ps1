@@ -458,7 +458,7 @@ function _zen_version_ps {
     $sign = if ($offset.Hours -ge 0) { "+" } else { "-" }
     $offsetStr = "{0}{1:D2}:{2:D2}" -f $sign, [Math]::Abs($offset.Hours), [Math]::Abs($offset.Minutes)
 
-    Write-Host "ZenCLI v1.2.0"
+    Write-Host "ZenCLI v1.3.0"
     Write-Host "Commit     : $commitSha ($commitDate)"
     Write-Host "Root       : $root"
     Write-Host "Platform   : $osDesc [Windows]"

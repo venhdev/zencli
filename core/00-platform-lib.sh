@@ -1360,7 +1360,7 @@ _zen_package_action() {
 
 _zen_version() {
   local dotfiles_root="$(_get_zen_root)"
-  local ver="v1.2.0"
+  local ver="v1.3.0"
   local commit_sha="-"
   local commit_date="-"
   if command -v git >/dev/null 2>&1 && [[ -d "$dotfiles_root/.git" ]]; then

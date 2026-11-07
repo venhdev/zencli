@@ -591,7 +591,7 @@ _install_from_github() {
   printf " • Target Path  : %s/%s ${_TUI_GREEN}(User-space, no sudo required)${_TUI_RESET}\n" "$target_dir" "$cmd" >/dev/tty
   printf "${_TUI_GRAY}────────────────────────────────────────────────────────────────────────${_TUI_RESET}\n" >/dev/tty
 
-  if ! _tui_confirm_prompt "Do you want to download and install this binary from the official release above?" "N"; then
+  if ! _tui_confirm_prompt "Do you want to download and install this binary from the official release above?" "Y"; then
     printf "${_TUI_YELLOW}[-] Skipped binary installation for %s.${_TUI_RESET}\n" "$cmd" >/dev/tty
     printf "    Manual installation instructions: https://github.com/%s#installation\n" "$repo" >/dev/tty
     return 0
@@ -787,8 +787,13 @@ _action_review_and_execute() {
     printf "\n${_TUI_CYAN}==> Pre-authenticating sudo credentials for APT operations...${_TUI_RESET}\n"
     if ! sudo -v; then
       printf "${_TUI_RED}Error: Sudo authentication failed. Transaction aborted.${_TUI_RESET}\n"
-      printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools...${_TUI_RESET}"
-      read -r _ </dev/tty || true
+      printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools (or 'q' to quit)...${_TUI_RESET}"
+      local key=""
+      IFS= read -r -s -n 1 key </dev/tty || true
+      if [[ "$key" == "q" || "$key" == "Q" ]]; then
+        printf "\n"
+        exit 1
+      fi
       _tui_enter
       return 1
     fi
@@ -840,8 +845,13 @@ _action_review_and_execute() {
   done
 
   printf "\n${_TUI_GREEN}${_TUI_BOLD}✔ Transaction applied successfully.${_TUI_RESET}\n"
-  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools...${_TUI_RESET}"
-  read -r _ </dev/tty || true
+  printf "\n${_TUI_GRAY}Press Enter to return to ZenCLI Developer Tools (or 'q' to quit)...${_TUI_RESET}"
+  local finish_key=""
+  IFS= read -r -s -n 1 finish_key </dev/tty || true
+  if [[ "$finish_key" == "q" || "$finish_key" == "Q" ]]; then
+    printf "\n"
+    exit 0
+  fi
   _refresh_inventory
   _tui_enter
 }

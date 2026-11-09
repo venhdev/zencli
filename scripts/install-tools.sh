@@ -225,7 +225,7 @@ _detect_origin() {
 # ==============================================================================
 # MANIFEST LEDGER SYNC HELPERS (.installed.json)
 # ==============================================================================
-_get_manifest_path() {
+_tools_get_manifest_path() {
   local root="${ZENCLI_ROOT:-${ZENCLI_DIR:-${_DOTFILES_ROOT:-${ZEN_ROOT:-${ZEN_DIR:-${ZEN:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}}}}"
   local candidates=(
     "${ZEN_MANIFEST:-}"
@@ -248,7 +248,7 @@ _get_manifest_path() {
 _manifest_get_tool_info() {
   local cmd="$1"
   local manifest_file
-  manifest_file="$(_get_manifest_path)"
+  manifest_file="$(_tools_get_manifest_path)"
   [[ -f "$manifest_file" ]] || return 1
   command -v python3 >/dev/null 2>&1 || return 1
 
@@ -276,7 +276,7 @@ _manifest_sync_tool() {
   local bin_path="$5"
   local repo="$6"
   local manifest_file
-  manifest_file="$(_get_manifest_path)"
+  manifest_file="$(_tools_get_manifest_path)"
 
   command -v python3 >/dev/null 2>&1 || return 0
 
@@ -322,7 +322,7 @@ os.replace(tmp_path, manifest_path)
 _manifest_remove_tool() {
   local cmd="$1"
   local manifest_file
-  manifest_file="$(_get_manifest_path)"
+  manifest_file="$(_tools_get_manifest_path)"
 
   command -v python3 >/dev/null 2>&1 || return 0
   [[ -f "$manifest_file" ]] || return 0
@@ -926,8 +926,8 @@ _render_live_detail() {
   local title_part="┌─[ DETAIL: $c ]"
   local pad_len=$(( width - ${#title_part} - 1 ))
   (( pad_len < 0 )) && pad_len=0
-  local top_dashes
-  top_dashes="$(_tui_repeat_char "─" "$pad_len")"
+  local top_dashes=""
+  _tui_repeat_char "─" "$pad_len" top_dashes
   printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
 
   local action_badge="None [ ]"
@@ -968,8 +968,8 @@ _render_live_detail() {
   fi
 
   for line in "${detail_lines[@]}"; do
-    local trunc_line
-    trunc_line="$(_tui_truncate "$line" "$inner_width")"
+    local trunc_line=""
+    _tui_truncate "$line" "$inner_width" trunc_line
     local pad_spaces=$(( inner_width - ${#trunc_line} ))
     (( pad_spaces < 0 )) && pad_spaces=0
     local pad_str
@@ -977,8 +977,8 @@ _render_live_detail() {
     printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
-  local bot_dashes
-  bot_dashes="$(_tui_repeat_char "─" "$(( width - 2 ))")"
+  local bot_dashes=""
+  _tui_repeat_char "─" "$(( width - 2 ))" bot_dashes
   printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$bot_dashes" >/dev/tty
 }
 
@@ -1038,7 +1038,8 @@ _main_tui_loop() {
 
     if (( cols >= 85 )); then
       desc_avail=$(( cols - 58 ))
-      desc_trunc="$(_tui_truncate "${descs[i]}" "$desc_avail")"
+      local desc_trunc=""
+      _tui_truncate "${descs[i]}" "$desc_avail" desc_trunc
       printf "%b%b %-10s %b %-10s %-15s %s\n" \
         "$prefix" "$badge" "${cmds[i]}" "$status_disp" "$ver_disp" "$orig_disp" "$desc_trunc" >/dev/tty
     elif (( cols >= 62 )); then
@@ -1077,7 +1078,9 @@ _main_tui_loop() {
       _tui_draw_footer "QUEUE ($q_tot) │ [Enter] Apply │ [a] All │ [c] Clear"
     fi
   else
-    if (( cols >= 76 )); then
+    if (( cols >= 88 )); then
+      _tui_draw_footer "[1-9/0] Jump  [↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [a] All  [c] Clear  [?] Help  [q] Quit"
+    elif (( cols >= 76 )); then
       _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [d] Del  [a] All  [c] Clear  [?] Help  [q] Quit"
     elif (( cols >= 62 )); then
       _tui_draw_footer "[↑/↓] Move  [i] Ins  [u] Upd  [a] All  [c] Clear  [?] Help  [q] Quit"
@@ -1090,6 +1093,14 @@ _main_tui_loop() {
   _tui_read_key action
 
   case "$action" in
+    CHAR:[1-9])
+      local num="${action#CHAR:}"
+      local target=$(( num - 1 ))
+      if (( target < item_count )); then cursor=$target; fi
+      ;;
+    CHAR:0)
+      if (( item_count >= 10 )); then cursor=9; fi
+      ;;
     REDRAW)
       continue
       ;;
@@ -1110,33 +1121,33 @@ _main_tui_loop() {
         fi
       fi
       ;;
-    INSTALL)
+    INSTALL|CHAR:i|CHAR:I|CHAR:+)
       if (( statuses[cursor] == 0 )); then
         staged_actions[cursor]=1
       else
         staged_actions[cursor]=2
       fi
       ;;
-    UPDATE)
+    UPDATE|CHAR:u|CHAR:U|CHAR:^)
       if (( statuses[cursor] == 1 )); then
         staged_actions[cursor]=2
       else
         staged_actions[cursor]=1
       fi
       ;;
-    DELETE)
+    DELETE|CHAR:d|CHAR:D|CHAR:-)
       if (( statuses[cursor] == 1 )); then
         staged_actions[cursor]=3
       fi
       ;;
-    MISSING)
+    MISSING|CHAR:m|CHAR:M)
       for ((i=0; i<item_count; i++)); do
         if (( statuses[i] == 0 )); then
           staged_actions[i]=1
         fi
       done
       ;;
-    TOGGLE_ALL)
+    TOGGLE_ALL|CHAR:a|CHAR:A)
       local all_staged=1
       for ((i=0; i<item_count; i++)); do
         if (( staged_actions[i] == 0 )); then
@@ -1160,7 +1171,7 @@ _main_tui_loop() {
         done
       fi
       ;;
-    CLEAR)
+    CLEAR|CHAR:c|CHAR:C)
       for ((i=0; i<item_count; i++)); do
         staged_actions[i]=0
       done
@@ -1168,7 +1179,7 @@ _main_tui_loop() {
     ENTER)
       _action_review_and_execute
       ;;
-    INFO)
+    INFO|CHAR:?|CHAR:h|CHAR:H|CHAR:o|CHAR:O)
       _action_show_help
       ;;
     QUIT|ESC)

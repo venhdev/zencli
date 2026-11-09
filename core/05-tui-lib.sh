@@ -62,24 +62,39 @@ _tui_on_winch() {
 _tui_repeat_char() {
   local char="${1:-─}"
   local count="${2:-0}"
-  (( count <= 0 )) && return 0
+  local out_var="${3:-}"
   local out=""
-  printf -v out '%*s' "$count" ''
-  printf "%s" "${out// /$char}"
+  if (( count > 0 )); then
+    printf -v out '%*s' "$count" ''
+    out="${out// /$char}"
+  fi
+  if [[ -n "$out_var" ]]; then
+    printf -v "$out_var" "%s" "$out"
+  else
+    printf "%s" "$out"
+  fi
 }
 
 # Zero-fork string truncation with ellipsis
 _tui_truncate() {
   local str="$1"
   local max_len="$2"
+  local out_var="${3:-}"
+  local res=""
   if (( ${#str} > max_len )); then
     if (( max_len > 3 )); then
-      printf "%s..." "${str:0:$((max_len - 3))}"
+      res="${str:0:$((max_len - 3))}..."
     else
-      printf "%s" "${str:0:$max_len}"
+      res="${str:0:$max_len}"
     fi
   else
-    printf "%s" "$str"
+    res="$str"
+  fi
+
+  if [[ -n "$out_var" ]]; then
+    printf -v "$out_var" "%s" "$res"
+  else
+    printf "%s" "$res"
   fi
 }
 
@@ -172,20 +187,6 @@ _tui_read_key() {
     eval "$__trk_out_var='DOWN'"
   elif [[ "$__trk_key" == " " ]]; then
     eval "$__trk_out_var='SPACE'"
-  elif [[ "$__trk_key" == "a" || "$__trk_key" == "A" ]]; then
-    eval "$__trk_out_var='TOGGLE_ALL'"
-  elif [[ "$__trk_key" == "c" || "$__trk_key" == "C" ]]; then
-    eval "$__trk_out_var='CLEAR'"
-  elif [[ "$__trk_key" == "m" || "$__trk_key" == "M" ]]; then
-    eval "$__trk_out_var='MISSING'"
-  elif [[ "$__trk_key" == "i" || "$__trk_key" == "I" || "$__trk_key" == "+" ]]; then
-    eval "$__trk_out_var='INSTALL'"
-  elif [[ "$__trk_key" == "u" || "$__trk_key" == "U" || "$__trk_key" == "^" ]]; then
-    eval "$__trk_out_var='UPDATE'"
-  elif [[ "$__trk_key" == "d" || "$__trk_key" == "D" || "$__trk_key" == "-" ]]; then
-    eval "$__trk_out_var='DELETE'"
-  elif [[ "$__trk_key" == "?" || "$__trk_key" == "o" || "$__trk_key" == "O" || "$__trk_key" == "h" || "$__trk_key" == "H" ]]; then
-    eval "$__trk_out_var='INFO'"
   elif [[ "$__trk_key" == "q" || "$__trk_key" == "Q" || "$__trk_key" == $'\x03' || "$__trk_key" == $'\x04' ]]; then
     eval "$__trk_out_var='QUIT'"
   elif [[ "$__trk_key" == "" || "$__trk_key" == $'\r' || "$__trk_key" == $'\n' ]]; then
@@ -203,8 +204,8 @@ _tui_draw_header() {
   local width="${_TUI_COLS:-80}"
   (( width > 80 )) && width=80
   (( width < 36 )) && width=36
-  local divider
-  divider="$(_tui_repeat_char "─" "$width")"
+  local divider=""
+  _tui_repeat_char "─" "$width" divider
 
   printf "${_TUI_CYAN}${_TUI_BOLD}=== %s ===${_TUI_RESET}\n" "$title" >/dev/tty
   if [[ -n "$subtitle" ]]; then
@@ -220,8 +221,8 @@ _tui_draw_footer() {
   local width="${_TUI_COLS:-80}"
   (( width > 80 )) && width=80
   (( width < 36 )) && width=36
-  local divider
-  divider="$(_tui_repeat_char "─" "$width")"
+  local divider=""
+  _tui_repeat_char "─" "$width" divider
 
   printf "\n${_TUI_GRAY}%s${_TUI_RESET}\n" "$divider" >/dev/tty
   if [[ -n "$help_text" && ${#help_text} -le width ]]; then
@@ -250,14 +251,14 @@ _tui_modal_box() {
   local title_part="┌─[ $title ]"
   local pad_len=$((width - ${#title_part} - 1))
   (( pad_len < 0 )) && pad_len=0
-  local top_dashes
-  top_dashes="$(_tui_repeat_char "─" "$pad_len")"
+  local top_dashes=""
+  _tui_repeat_char "─" "$pad_len" top_dashes
   printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
 
   local line
   for line in "${_lines[@]}"; do
-    local trunc_line
-    trunc_line="$(_tui_truncate "$line" "$inner_width")"
+    local trunc_line=""
+    _tui_truncate "$line" "$inner_width" trunc_line
     local pad_spaces=$(( inner_width - ${#trunc_line} ))
     (( pad_spaces < 0 )) && pad_spaces=0
     local pad_str
@@ -265,12 +266,12 @@ _tui_modal_box() {
     printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
-  local div_dashes
-  div_dashes="$(_tui_repeat_char "─" "$((width - 2))")"
+  local div_dashes=""
+  _tui_repeat_char "─" "$((width - 2))" div_dashes
   printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$div_dashes" >/dev/tty
   local return_hint="  [Press any key or Esc/q to return]"
-  local trunc_hint
-  trunc_hint="$(_tui_truncate "$return_hint" "$inner_width")"
+  local trunc_hint=""
+  _tui_truncate "$return_hint" "$inner_width" trunc_hint
   local pad_hint_spaces=$(( inner_width - ${#trunc_hint} ))
   (( pad_hint_spaces < 0 )) && pad_hint_spaces=0
   local pad_hint_str
@@ -301,14 +302,14 @@ _tui_modal_confirm() {
   local title_part="┌─[ $title ]"
   local pad_len=$((width - ${#title_part} - 1))
   (( pad_len < 0 )) && pad_len=0
-  local top_dashes
-  top_dashes="$(_tui_repeat_char "─" "$pad_len")"
+  local top_dashes=""
+  _tui_repeat_char "─" "$pad_len" top_dashes
   printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
 
   local line
   for line in "${_lines[@]}"; do
-    local trunc_line
-    trunc_line="$(_tui_truncate "$line" "$inner_width")"
+    local trunc_line=""
+    _tui_truncate "$line" "$inner_width" trunc_line
     local pad_spaces=$(( inner_width - ${#trunc_line} ))
     (( pad_spaces < 0 )) && pad_spaces=0
     local pad_str
@@ -316,11 +317,11 @@ _tui_modal_confirm() {
     printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
 
-  local div_dashes
-  div_dashes="$(_tui_repeat_char "─" "$((width - 2))")"
+  local div_dashes=""
+  _tui_repeat_char "─" "$((width - 2))" div_dashes
   printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$div_dashes" >/dev/tty
-  local trunc_hint
-  trunc_hint="$(_tui_truncate "  $prompt_hint" "$inner_width")"
+  local trunc_hint=""
+  _tui_truncate "  $prompt_hint" "$inner_width" trunc_hint
   local pad_hint_spaces=$(( inner_width - ${#trunc_hint} ))
   (( pad_hint_spaces < 0 )) && pad_hint_spaces=0
   local pad_hint_str
@@ -411,7 +412,8 @@ _tui_select_one() {
     (( max_w < 36 )) && max_w=36
 
     for ((i=0; i<count; i++)); do
-      local item_text="$(_tui_truncate "${items[i]}" "$((max_w - 6))")"
+      local item_text=""
+      _tui_truncate "${items[i]}" "$((max_w - 6))" item_text
       if (( i == cursor )); then
         printf "  ${_TUI_GREEN}${_TUI_BOLD}> %s${_TUI_RESET}\n" "$item_text" >/dev/tty
       else
@@ -419,10 +421,18 @@ _tui_select_one() {
       fi
     done
 
-    _tui_draw_footer "[↑/↓] Navigate  [Enter] Confirm  [q/Esc] Cancel"
+    _tui_draw_footer "[1-9/0] Jump  [↑/↓] Navigate  [Enter] Confirm  [q/Esc] Cancel"
 
     _tui_read_key key
     case "$key" in
+      CHAR:[1-9])
+        local _t_num="${key#CHAR:}"
+        local _t_idx=$(( _t_num - 1 ))
+        if (( _t_idx < count )); then cursor=$_t_idx; fi
+        ;;
+      CHAR:0)
+        if (( count >= 10 )); then cursor=9; fi
+        ;;
       UP)
         if (( cursor > 0 )); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
         ;;
@@ -496,7 +506,8 @@ _tui_select_many() {
         (( sel[i] )) && mark="x"
       fi
 
-      local label_text="$(_tui_truncate "${labels[i]}" "$((max_w - 10))")"
+      local label_text=""
+      _tui_truncate "${labels[i]}" "$((max_w - 10))" label_text
       if (( i == cursor )); then
         printf "  ${_TUI_GREEN}${_TUI_BOLD}> [%s] %s${_TUI_RESET}\n" "$mark" "$label_text" >/dev/tty
       else
@@ -505,13 +516,21 @@ _tui_select_many() {
     done
 
     if (( has_toggle_all )); then
-      _tui_draw_footer "[↑/↓] Move  [Space] Toggle  [a] Toggle All  [Enter] Confirm  [q] Cancel"
+      _tui_draw_footer "[1-9/0] Jump  [↑/↓] Move  [Space] Toggle  [a] Toggle All  [Enter] Confirm  [q] Cancel"
     else
-      _tui_draw_footer "[↑/↓] Move  [Space] Toggle  [Enter] Confirm  [q] Cancel"
+      _tui_draw_footer "[1-9/0] Jump  [↑/↓] Move  [Space] Toggle  [Enter] Confirm  [q] Cancel"
     fi
 
     _tui_read_key key
     case "$key" in
+      CHAR:[1-9])
+        local _t_num="${key#CHAR:}"
+        local _t_idx=$(( _t_num - 1 ))
+        if (( _t_idx < count )); then cursor=$_t_idx; fi
+        ;;
+      CHAR:0)
+        if (( count >= 10 )); then cursor=9; fi
+        ;;
       UP)
         if (( cursor > 0 )); then cursor=$((cursor - 1)); else cursor=$((count - 1)); fi
         ;;
@@ -531,7 +550,7 @@ _tui_select_many() {
           sel[cursor]=$(( 1 - sel[cursor] ))
         fi
         ;;
-      TOGGLE_ALL|ALL)
+      TOGGLE_ALL|ALL|CHAR:a|CHAR:A)
         if (( has_toggle_all )); then
           local all_on=1
           for ((idx=1; idx<count; idx++)); do

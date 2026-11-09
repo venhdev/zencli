@@ -1,12 +1,16 @@
 # Confirmed command audit log manager & rerun helpers
 
-_cmdlog_file() {
+_cmdlog_get_path() {
   if declare -F _get_cmdlog_path >/dev/null 2>&1; then
     _get_cmdlog_path
   else
     local state_dir="${ZENCLI_STATE_DIR:-${ZEN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/zencli}}"
     echo "${_CMD_LOG:-${CMD_LOG:-$state_dir/commands.log}}"
   fi
+}
+
+_cmdlog_file() {
+  _cmdlog_get_path "$@"
 }
 
 _cmdlog_parse_records() {
@@ -45,10 +49,15 @@ _cmdlog_parse_records() {
 
 _cmdlog_shorten_path() {
   local p="$1"
+  local out_var="${2:-}"
+  local res="$p"
   if [[ $p == "$HOME"* ]]; then
-    echo "~${p#"$HOME"}"
+    res="~${p#"$HOME"}"
+  fi
+  if [[ -n "$out_var" ]]; then
+    printf -v "$out_var" "%s" "$res"
   else
-    echo "$p"
+    printf "%s\n" "$res"
   fi
 }
 
@@ -127,7 +136,7 @@ _cmdlog_clip() {
   [[ $target_idx =~ ^[0-9]+$ ]] || target_idx=1
 
   local line cmd
-  line=$(_cmdlog_parse_records "$file" | sed -n "${target_idx}p")
+  line=$(_cmdlog_parse_records "$file" | sed -n "${target_idx}{p;q}")
   [[ -n $line ]] || {
     echo "No log entry found at index $target_idx" >&2
     return 1
@@ -172,12 +181,11 @@ _cmdlog_list() {
 
   local entries=()
   local seen_cmds=$'\n'
-  local line ts status dur cwd cmd
+  local ts status dur cwd cmd
   local current_pwd="${PWD:-$HOME}"
 
-  while IFS= read -r line || [[ -n $line ]]; do
-    [[ -n $line ]] || continue
-    IFS=$'\t' read -r ts status dur cwd cmd <<< "$line"
+  while IFS=$'\t' read -r ts status dur cwd cmd || [[ -n $cmd ]]; do
+    [[ -n $ts ]] || continue
 
     if ((cwd_only)) && [[ $cwd != "$current_pwd" ]]; then
       continue
@@ -197,7 +205,7 @@ _cmdlog_list() {
     fi
     seen_cmds+="$cmd"$'\n'
 
-    entries+=("$line")
+    entries+=("$ts"$'\t'"$status"$'\t'"$dur"$'\t'"$cwd"$'\t'"$cmd")
     ((${#entries[@]} >= limit)) && break
   done < <(_cmdlog_parse_records "$file")
 
@@ -236,7 +244,9 @@ _cmdlog_list() {
 
     local cwd_str=""
     if [[ $cwd != "-" && -n $cwd ]]; then
-      cwd_str=" \033[0;33m[$(_cmdlog_shorten_path "$cwd")]\033[0m"
+      local short_cwd=""
+      _cmdlog_shorten_path "$cwd" short_cwd
+      cwd_str=" \033[0;33m[$short_cwd]\033[0m"
     fi
 
     local disp_cmd="$cmd"
@@ -301,12 +311,197 @@ _cmdlog_tui_apply_filter() {
   fi
 }
 
+_cmdlog_tui_render_view() {
+  local prompt_title="$1"
+  local search_mode="$2"
+  local filter_query="$3"
+  local cursor="$4"
+  local max_cols="$5"
+  local -n _v_raw="$6"
+  local -n _v_indices="$7"
+
+  printf "\033[H\033[2J" >/dev/tty
+  printf "\033[1;34m=== %s ===\033[0m\n" "$prompt_title" >/dev/tty
+  if ((search_mode)); then
+    printf "\033[1;33m[SEARCH]\033[0m Query: \033[1m%s\033[0m█ \033[90m(Enter/Esc: Done searching | ↑/↓: Select | Tab: Copy)\033[0m\n" "$filter_query" >/dev/tty
+  else
+    if [[ -n "$filter_query" ]]; then
+      printf "\033[90m[1-9/0] Jump | [↑/↓/j/k] Move | [/] Search | [c] Copy | [r/Enter] Run | [Esc] Clear filter | [q] Cancel\033[0m\n" >/dev/tty
+      printf "\033[0;33mFiltered by:\033[0m '%s' \033[90m(press / to edit, Esc to clear)\033[0m\n" "$filter_query" >/dev/tty
+    else
+      printf "\033[90m[1-9/0] Jump | [↑/↓/j/k] Move | [/] Search | [c] Copy | [r/Enter] Run | [q] Cancel\033[0m\n" >/dev/tty
+    fi
+  fi
+  printf "\n" >/dev/tty
+
+  local f_count=${#_v_indices[@]}
+  if ((f_count == 0)); then
+    printf " \033[90m(No commands match '%s')\033[0m\n\n" "$filter_query" >/dev/tty
+    return 0
+  fi
+
+  local idx
+  for ((idx=0; idx<f_count; idx++)); do
+    local orig_i="${_v_indices[idx]}"
+    local entry="${_v_raw[orig_i]}"
+    local ts status dur cwd cmd
+    IFS=$'\t' read -r ts status dur cwd cmd <<< "$entry"
+
+    local st_str=""
+    case "$status" in
+      0)   st_str="\033[1;32m[OK]\033[0m" ;;
+      "-") st_str="\033[0;90m[-]\033[0m" ;;
+      *)   st_str="\033[1;31m[ERR:$status]\033[0m" ;;
+    esac
+
+    local cwd_str=""
+    if [[ $cwd != "-" && -n $cwd ]]; then
+      local short_cwd=""
+      _cmdlog_shorten_path "$cwd" short_cwd
+      cwd_str=" \033[0;33m[$short_cwd]\033[0m"
+    fi
+
+    local disp_cmd="$cmd"
+    if (( ${#disp_cmd} > max_cols - 2 )); then
+      disp_cmd="${disp_cmd:0:$((max_cols - 5))}..."
+    fi
+
+    if ((idx == cursor)); then
+      printf "\033[1;32m▶ [%d]\033[0m \033[0;90m%s\033[0m %b%b\n\033[1m%s\033[0m\n\n" \
+        "$((orig_i + 1))" "$ts" "$st_str" "$cwd_str" "$disp_cmd" >/dev/tty
+    else
+      printf "  \033[1;36m[%d]\033[0m \033[0;90m%s\033[0m %b%b\n%s\n\n" \
+        "$((orig_i + 1))" "$ts" "$st_str" "$cwd_str" "$disp_cmd" >/dev/tty
+    fi
+  done
+}
+
+_cmdlog_tui_handle_search() {
+  local key="$1"
+  local -n _s_raw="$2"
+  local -n _s_indices="$3"
+  local -n _s_cursor="$4"
+  local -n _s_query="$5"
+  local -n _s_mode="$6"
+  local -n _s_act="$7"
+  local -n _s_idx="$8"
+
+  local f_count=${#_s_indices[@]}
+
+  if [[ $key == $'\x1b' ]]; then
+    local seq=""
+    read -rsn2 -t 0.02 seq < /dev/tty || true
+    case "$seq" in
+      "[A"|"OA") ((_s_cursor > 0)) && _s_cursor=$((_s_cursor - 1)) ;;
+      "[B"|"OB") ((_s_cursor < f_count - 1)) && _s_cursor=$((_s_cursor + 1)) ;;
+      "") _s_mode=0 ;; # Plain Esc exits search mode to navigation mode, keeping filter_query
+    esac
+  elif [[ $key == "" || $key == $'\n' || $key == $'\r' ]]; then
+    # Enter exits search mode to navigation mode, keeping filter_query
+    _s_mode=0
+  elif [[ $key == $'\t' ]]; then
+    if ((f_count > 0)); then
+      _s_act="COPY"
+      _s_idx="${_s_indices[_s_cursor]}"
+      return 1
+    fi
+  elif [[ $key == $'\x7f' || $key == $'\b' ]]; then
+    if [[ -n "$_s_query" ]]; then
+      _s_query="${_s_query:0:-1}"
+      _cmdlog_tui_apply_filter "$_s_query" _s_raw _s_indices _s_cursor
+    fi
+  else
+    if [[ $key =~ [[:print:]] ]]; then
+      _s_query+="$key"
+      _cmdlog_tui_apply_filter "$_s_query" _s_raw _s_indices _s_cursor
+    fi
+  fi
+  return 0
+}
+
+_cmdlog_tui_handle_nav() {
+  local key="$1"
+  local total="$2"
+  local -n _n_raw="$3"
+  local -n _n_indices="$4"
+  local -n _n_cursor="$5"
+  local -n _n_query="$6"
+  local -n _n_mode="$7"
+  local -n _n_act="$8"
+  local -n _n_idx="$9"
+
+  local f_count=${#_n_indices[@]}
+
+  if [[ $key == $'\x1b' ]]; then
+    local seq=""
+    read -rsn2 -t 0.02 seq < /dev/tty || true
+    case "$seq" in
+      "[A"|"OA") ((_n_cursor > 0)) && _n_cursor=$((_n_cursor - 1)) ;;
+      "[B"|"OB") ((_n_cursor < f_count - 1)) && _n_cursor=$((_n_cursor + 1)) ;;
+      "")
+        if [[ -n "$_n_query" ]]; then
+          _n_query=""
+          _cmdlog_tui_apply_filter "$_n_query" _n_raw _n_indices _n_cursor
+        else
+          _n_act="CANCEL"
+          return 1
+        fi
+        ;;
+    esac
+  elif [[ $key =~ ^[1-9]$ ]]; then
+    local target_orig=$((key - 1))
+    local f_idx
+    for ((f_idx=0; f_idx<f_count; f_idx++)); do
+      if ((_n_indices[f_idx] == target_orig)); then
+        _n_cursor=$f_idx
+        break
+      fi
+    done
+  elif [[ $key == "0" ]] && ((total >= 10)); then
+    local target_orig=9
+    local f_idx
+    for ((f_idx=0; f_idx<f_count; f_idx++)); do
+      if ((_n_indices[f_idx] == target_orig)); then
+        _n_cursor=$f_idx
+        break
+      fi
+    done
+  elif [[ $key == "k" || $key == "K" ]]; then
+    ((_n_cursor > 0)) && _n_cursor=$((_n_cursor - 1))
+  elif [[ $key == "j" || $key == "J" ]]; then
+    ((_n_cursor < f_count - 1)) && _n_cursor=$((_n_cursor + 1))
+  elif [[ $key == "/" ]]; then
+    _n_mode=1
+  elif [[ $key == "q" || $key == "Q" || $key == $'\x03' ]]; then
+    _n_act="CANCEL"
+    return 1
+  elif [[ $key == "c" || $key == "C" ]]; then
+    if ((f_count > 0)); then
+      _n_act="COPY"
+      _n_idx="${_n_indices[_n_cursor]}"
+      return 1
+    fi
+  elif [[ $key == "r" || $key == "R" || $key == "" || $key == $'\n' || $key == $'\r' ]]; then
+    if ((f_count > 0)); then
+      _n_act="RUN"
+      _n_idx="${_n_indices[_n_cursor]}"
+      return 1
+    fi
+  fi
+  return 0
+}
+
 _cmdlog_tui_select() {
   local prompt_title="$1"
-  shift
+  local -n _sel_action="$2"
+  local -n _sel_idx="$3"
+  shift 3
   local raw_entries=("$@")
   local total=${#raw_entries[@]}
   ((total == 0)) && return 1
+
+  _sel_action="CANCEL"
+  _sel_idx=""
 
   local cursor=0
   local search_mode=0
@@ -322,134 +517,19 @@ _cmdlog_tui_select() {
 
   # Hide cursor on TTY
   tput civis >/dev/tty 2>/dev/null || printf "\033[?25l" >/dev/tty
-
   trap _cmdlog_tui_cleanup RETURN INT TERM
 
   while true; do
-    printf "\033[H\033[2J" >/dev/tty
-    printf "\033[1;34m=== %s ===\033[0m\n" "$prompt_title" >/dev/tty
-    if ((search_mode)); then
-      printf "\033[1;33m[SEARCH]\033[0m Query: \033[1m%s\033[0m█ \033[90m(Enter/Esc: Done searching | ↑/↓: Select | Tab: Copy)\033[0m\n" "$filter_query" >/dev/tty
-    else
-      if [[ -n "$filter_query" ]]; then
-        printf "\033[90m[↑/↓/j/k] Select | [/] Search | [c] Copy | [r/Enter] Run | [Esc] Clear filter | [q] Cancel\033[0m\n" >/dev/tty
-        printf "\033[0;33mFiltered by:\033[0m '%s' \033[90m(press / to edit, Esc to clear)\033[0m\n" "$filter_query" >/dev/tty
-      else
-        printf "\033[90m[↑/↓/j/k] Select | [/] Search | [c] Copy | [r/Enter] Run | [q] Cancel\033[0m\n" >/dev/tty
-      fi
-    fi
-    printf "\n" >/dev/tty
-
-    local f_count=${#filtered_indices[@]}
-    if ((f_count == 0)); then
-      printf " \033[90m(No commands match '%s')\033[0m\n\n" "$filter_query" >/dev/tty
-    else
-      local idx
-      for ((idx=0; idx<f_count; idx++)); do
-        local orig_i="${filtered_indices[idx]}"
-        local entry="${raw_entries[orig_i]}"
-        local ts status dur cwd cmd
-        IFS=$'\t' read -r ts status dur cwd cmd <<< "$entry"
-
-        local st_str=""
-        case "$status" in
-          0)   st_str="\033[1;32m[OK]\033[0m" ;;
-          "-") st_str="\033[0;90m[-]\033[0m" ;;
-          *)   st_str="\033[1;31m[ERR:$status]\033[0m" ;;
-        esac
-
-        local cwd_str=""
-        if [[ $cwd != "-" && -n $cwd ]]; then
-          cwd_str=" \033[0;33m[$(_cmdlog_shorten_path "$cwd")]\033[0m"
-        fi
-
-        local disp_cmd="$cmd"
-        if (( ${#disp_cmd} > max_cols - 2 )); then
-          disp_cmd="${disp_cmd:0:$((max_cols - 5))}..."
-        fi
-
-        if ((idx == cursor)); then
-          printf "\033[1;32m▶ [%d]\033[0m \033[0;90m%s\033[0m %b%b\n\033[1m%s\033[0m\n\n" \
-            "$((orig_i + 1))" "$ts" "$st_str" "$cwd_str" "$disp_cmd" >/dev/tty
-        else
-          printf "  \033[1;36m[%d]\033[0m \033[0;90m%s\033[0m %b%b\n%s\n\n" \
-            "$((orig_i + 1))" "$ts" "$st_str" "$cwd_str" "$disp_cmd" >/dev/tty
-        fi
-      done
-    fi
+    _cmdlog_tui_render_view "$prompt_title" "$search_mode" "$filter_query" "$cursor" "$max_cols" raw_entries filtered_indices
 
     # Read keystroke
-    local key="" seq=""
+    local key=""
     IFS= read -rsn1 key < /dev/tty
 
     if ((search_mode)); then
-      if [[ $key == $'\x1b' ]]; then
-        read -rsn2 -t 0.02 seq < /dev/tty || true
-        case "$seq" in
-          "[A"|"OA") ((cursor > 0)) && cursor=$((cursor - 1)) ;;
-          "[B"|"OB") ((cursor < f_count - 1)) && cursor=$((cursor + 1)) ;;
-          "") search_mode=0 ;; # Plain Esc exits search mode to navigation mode, keeping filter_query
-        esac
-      elif [[ $key == "" || $key == $'\n' || $key == $'\r' ]]; then
-        # Enter exits search mode to navigation mode, keeping filter_query
-        search_mode=0
-      elif [[ $key == $'\t' ]]; then
-        if ((f_count > 0)); then
-          TUI_ACTION="COPY"
-          TUI_CHOSEN_IDX="${filtered_indices[cursor]}"
-          return 0
-        fi
-      elif [[ $key == $'\x7f' || $key == $'\b' ]]; then
-        if [[ -n "$filter_query" ]]; then
-          filter_query="${filter_query:0:-1}"
-          _cmdlog_tui_apply_filter "$filter_query" raw_entries filtered_indices cursor
-        fi
-      else
-        if [[ $key =~ [[:print:]] ]]; then
-          filter_query+="$key"
-          _cmdlog_tui_apply_filter "$filter_query" raw_entries filtered_indices cursor
-        fi
-      fi
-      continue
-    fi
-
-    # Normal navigation mode
-    if [[ $key == $'\x1b' ]]; then
-      read -rsn2 -t 0.02 seq < /dev/tty || true
-      case "$seq" in
-        "[A"|"OA") ((cursor > 0)) && cursor=$((cursor - 1)) ;;
-        "[B"|"OB") ((cursor < f_count - 1)) && cursor=$((cursor + 1)) ;;
-        "")
-          if [[ -n "$filter_query" ]]; then
-            filter_query=""
-            _cmdlog_tui_apply_filter "$filter_query" raw_entries filtered_indices cursor
-          else
-            TUI_ACTION="CANCEL"
-            return 0
-          fi
-          ;;
-      esac
-    elif [[ $key == "k" || $key == "K" ]]; then
-      ((cursor > 0)) && cursor=$((cursor - 1))
-    elif [[ $key == "j" || $key == "J" ]]; then
-      ((cursor < f_count - 1)) && cursor=$((cursor + 1))
-    elif [[ $key == "/" ]]; then
-      search_mode=1
-    elif [[ $key == "q" || $key == "Q" || $key == $'\x03' ]]; then
-      TUI_ACTION="CANCEL"
-      return 0
-    elif [[ $key == "c" || $key == "C" ]]; then
-      if ((f_count > 0)); then
-        TUI_ACTION="COPY"
-        TUI_CHOSEN_IDX="${filtered_indices[cursor]}"
-        return 0
-      fi
-    elif [[ $key == "r" || $key == "R" || $key == "" || $key == $'\n' || $key == $'\r' ]]; then
-      if ((f_count > 0)); then
-        TUI_ACTION="RUN"
-        TUI_CHOSEN_IDX="${filtered_indices[cursor]}"
-        return 0
-      fi
+      _cmdlog_tui_handle_search "$key" raw_entries filtered_indices cursor filter_query search_mode _sel_action _sel_idx || return 0
+    else
+      _cmdlog_tui_handle_nav "$key" "$total" raw_entries filtered_indices cursor filter_query search_mode _sel_action _sel_idx || return 0
     fi
   done
 }
@@ -462,13 +542,12 @@ _cmdlog_collect_entries() {
   local -n _out_entries="$5"
 
   local seen_cmds=$'\n'
-  local line ts status dur cwd cmd
+  local ts status dur cwd cmd
   local current_pwd="${PWD:-$HOME}"
 
   _out_entries=()
-  while IFS= read -r line || [[ -n $line ]]; do
-    [[ -n $line ]] || continue
-    IFS=$'\t' read -r ts status dur cwd cmd <<< "$line"
+  while IFS=$'\t' read -r ts status dur cwd cmd || [[ -n $cmd ]]; do
+    [[ -n $ts ]] || continue
 
     if ((cwd_only)) && [[ $cwd != "$current_pwd" ]]; then
       continue
@@ -488,7 +567,7 @@ _cmdlog_collect_entries() {
     fi
     seen_cmds+="$cmd"$'\n'
 
-    _out_entries+=("$line")
+    _out_entries+=("$ts"$'\t'"$status"$'\t'"$dur"$'\t'"$cwd"$'\t'"$cmd")
     ((${#_out_entries[@]} >= limit)) && break
   done < <(_cmdlog_parse_records "$file")
 }
@@ -502,7 +581,8 @@ _cmdlog_fzf_select() {
   for i in "${!_fzf_entries[@]}"; do
     local ts status dur cwd cmd
     IFS=$'\t' read -r ts status dur cwd cmd <<< "${_fzf_entries[i]}"
-    local short_cwd="$(_cmdlog_shorten_path "$cwd")"
+    local short_cwd=""
+    _cmdlog_shorten_path "$cwd" short_cwd
     local st_color=""
     case "$status" in
       0)   st_color=$'\033[1;32m[OK]\033[0m' ;;
@@ -569,7 +649,9 @@ _cmdlog_fallback_select() {
     esac
     local cwd_str=""
     if [[ $cwd != "-" && -n $cwd ]]; then
-      cwd_str=" \033[0;33m[$(_cmdlog_shorten_path "$cwd")]\033[0m"
+      local short_cwd=""
+      _cmdlog_shorten_path "$cwd" short_cwd
+      cwd_str=" \033[0;33m[$short_cwd]\033[0m"
     fi
     if ((i < total - 1)); then
       printf ' \033[1;36m[%d]\033[0m \033[0;90m%s\033[0m %b%b\n%s\n\n' \
@@ -741,19 +823,18 @@ _cmdlog_run() {
         if ((fzf_status == 1 || fzf_status == 2)); then return 0; fi
         interactive_choice=1
       else
-        TUI_ACTION=""
-        TUI_CHOSEN_IDX=""
-        _cmdlog_tui_select "$title" "${entries[@]}"
-        case "$TUI_ACTION" in
+        local tui_action="CANCEL" tui_chosen_idx=""
+        _cmdlog_tui_select "$title" tui_action tui_chosen_idx "${entries[@]}"
+        case "$tui_action" in
           COPY)
-            local to_copy="${entries[TUI_CHOSEN_IDX]}"
+            local to_copy="${entries[tui_chosen_idx]}"
             local c_ts c_st c_dur c_cwd c_cmd
             IFS=$'\t' read -r c_ts c_st c_dur c_cwd c_cmd <<< "$to_copy"
             _cmdlog_copy_to_clip "$c_cmd"
             return 0
             ;;
           RUN)
-            chosen_idx=$((TUI_CHOSEN_IDX + 1))
+            chosen_idx=$((tui_chosen_idx + 1))
             interactive_choice=1
             ;;
           *)
@@ -783,7 +864,7 @@ _cmdlog_run() {
 
 cmdlog() {
   local log_file
-  log_file="$(_cmdlog_file)"
+  log_file="$(_cmdlog_get_path)"
 
   case "${1:-}" in
     path)

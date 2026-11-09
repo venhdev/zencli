@@ -28,10 +28,11 @@ All interactive full-screen experiences must initialize the Alternate Screen Buf
 - **Exit**: `printf "\033[?25h\033[?1049l" >/dev/tty` (restore cursor, deactivate alternate buffer).
 - **Safety Trap**: Robust traps on `EXIT`, `INT`, and `TERM` ensure the terminal cursor and buffer are restored even if the process is killed unexpectedly. Zero visual artifacts or cleared lines may bleed into the caller's terminal scrollback.
 
-### Invariant 2: Zero-Fork Event Loop
-Keypress handling must run entirely in pure Bash without spawning subshells or invoking external binaries (`awk`, `sed`, `cut`, `dd`):
+### Invariant 2: Zero-Fork Event Loop & In-Memory Mutation
+Keypress handling and view rendering must run entirely in pure Bash without spawning subshells (`$(...)`) or invoking external binaries (`awk`, `sed`, `cut`, `dd`):
 - **Raw Mode**: `stty -echo -icanon min 1 time 0` configured once upon entry.
-- **Normalized Key Parser**: `_tui_read_key` decodes multi-byte ANSI escape sequences (Arrow keys, Esc, Home, End) with zero perceptible latency and maps them to canonical event tokens (`UP`, `DOWN`, `LEFT`, `RIGHT`, `ENTER`, `SPACE`, `QUIT`, `ESC`, `ALL`).
+- **Normalized Key Parser**: `_tui_read_key` decodes multi-byte ANSI escape sequences (Arrow keys, Esc, Home, End) with zero perceptible latency and maps them to canonical event tokens (`UP`, `DOWN`, `LEFT`, `RIGHT`, `ENTER`, `SPACE`, `QUIT`, `ESC`, `ALL`, or `CHAR:<c>`).
+- **In-Memory String Helpers**: Primitives `_tui_repeat_char` and `_tui_truncate` accept an optional `out_var` parameter to assign results directly in caller memory via `printf -v "$out_var"` with zero subshell process forks.
 
 ### Invariant 3: Visual Design Tokens & Palette
 All TUI components must use unified ANSI styling tokens defined in `core/05-tui-lib.sh`:
@@ -54,6 +55,7 @@ Confirmations, alerts, and help screens must be rendered as centered modal dialo
 
 ### Invariant 6: Universal Keybindings
 All interactive menus must adhere to standard navigation bindings:
+- **Direct Jump**: `1`–`9` (Jump directly to item `[1]`–`[9]`), `0` (Jump to item `[10]` where total items >= 10).
 - **Navigation**: `↑` / `k` (Move Up), `↓` / `j` (Move Down).
 - **Selection**: `Space` (Toggle checkbox), `a` (Toggle All where applicable).
 - **Confirmation**: `Enter` (Submit / Confirm).

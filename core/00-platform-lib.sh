@@ -491,7 +491,7 @@ EOF
     for c in "${mig_configs[@]}"; do
       if [[ ! -d "$dest_config" ]]; then
         mv "$c" "$dest_config" 2>/dev/null || true
-        git -C "$dest_config" remote set-url origin "https://github.com/venhdev/zenforge.git" 2>/dev/null || true
+        git -C "$dest_config" remote set-url origin "https://github.com/venhdev/zencli.git" 2>/dev/null || true
         log_msg "  ✔ Renamed $c to $dest_config"
       else
         for f in "$c/.installed.json" "$c/local/local.env"; do

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="https://github.com/venhdev/zenforge.git"
+REPO="https://github.com/venhdev/zencli.git"
 DIR="${ZENCLI_DIR:-${ZEN_DIR:-${DOTFILES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zencli}}}"
 LEGACY_ZEN_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zen"
 LEGACY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles"

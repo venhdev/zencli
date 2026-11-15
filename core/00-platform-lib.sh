@@ -151,8 +151,22 @@ paste_clip() {
       fi
       ;;
     wsl|msys)
+      # Resolve powershell.exe from PATH or known Windows location (mirrors clip() pattern)
+      local ps_exe=""
       if command -v powershell.exe &>/dev/null; then
-        powershell.exe -NoProfile -Command "Get-Clipboard" 2>/dev/null
+        ps_exe="powershell.exe"
+      else
+        local win_ps="${DOTFILES_WIN_PATH:-$_WIN_DIR}/System32/WindowsPowerShell/v1.0/powershell.exe"
+        [[ -x "$win_ps" ]] && ps_exe="$win_ps"
+      fi
+      if [[ -n "$ps_exe" ]]; then
+        # Strip \r — Get-Clipboard returns Windows CRLF line endings
+        "$ps_exe" -NoProfile -Command "Get-Clipboard" 2>/dev/null | tr -d '\r'
+        return ${PIPESTATUS[0]}
+      fi
+      # WSLg Wayland fallback
+      if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste &>/dev/null; then
+        wl-paste --no-newline
         return $?
       fi
       ;;

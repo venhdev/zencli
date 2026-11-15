@@ -189,18 +189,18 @@ paste_clip() {
 
 # Save clipboard content to a zencli-managed temp file.
 # Usage:
-#   c2f          — write clipboard to temp file; print path
-#   c2f -c       — write + copy temp file's abs path back to clipboard (like cpwd)
+#   c2f          — write clipboard to temp file AND copy its abs path to clipboard
+#   c2f -n       — write only; print path without copying it to clipboard
 c2f() {
-  local copy_path=0
+  local copy_path=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -c|--copy) copy_path=1; shift ;;
+      -n|--no-copy) copy_path=0; shift ;;
       -h|--help)
-        echo "Usage: c2f [-c|--copy]"
-        echo "  (no flag)  Save clipboard content to a temp file and print its path."
-        echo "  -c|--copy  Also copy the temp file's absolute path to clipboard."
+        echo "Usage: c2f [-n|--no-copy]"
+        echo "  (no flag)  Save clipboard to temp file and copy its path to clipboard."
+        echo "  -n|--no-copy  Save only; print path without copying it to clipboard."
         return 0
         ;;
       *) echo "❌ Unknown option: $1" >&2; return 1 ;;

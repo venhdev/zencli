@@ -209,7 +209,8 @@ _zen_alias_catalog() {
     utils[++n_u] = "clip"       SEP "pbcopy | clip.exe | wl-copy"      SEP "Cross-platform clipboard copy helper";
     utils[++n_u] = "paste_clip" SEP "pbpaste | wl-paste | xclip -o"   SEP "Cross-platform clipboard read helper (stdout)";
     utils[++n_u] = "cpwd"       SEP "readlink -f | clip"               SEP "Copy Linux path of target (default: PWD) to clipboard";
-    utils[++n_u] = "c2f"        SEP "clipboard → temp file [-c]"       SEP "Save clipboard to temp file; -c also copies its path";
+    utils[++n_u] = "c2f"        SEP "clipboard → temp file + copy path" SEP "Save clipboard to temp file and copy its path; -n to skip copy";
+    utils[++n_u] = "c2fn"       SEP "c2f -n"                           SEP "Save clipboard to temp file only (no path copy)";
     utils[++n_u] = "opene" SEP "explorer [path]" SEP "Open file or directory in explorer/file manager";
     utils[++n_u] = "winpath" SEP "wslpath -w [path]" SEP "Convert Unix path to Windows format (WSL)";
     utils[++n_u] = "wcppath" SEP "wslpath -w | clip" SEP "Copy Windows path of target (default: PWD) to clipboard";

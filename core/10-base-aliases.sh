@@ -7,6 +7,9 @@ alias insdf='zen setup' # Dotfiles modular setup & provisioning
 alias ins='zen i'       # Fast shorthand for zen install
 alias ts='date +%s'
 
+# CLIPBOARD UTILS
+alias c2fn='c2f -n'     # Save clipboard to temp file only (no path copy)
+
 # PYTHON VENV
 alias va='source .venv/bin/activate'
 alias vd='deactivate'

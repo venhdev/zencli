@@ -141,6 +141,87 @@ cpwd() {
   echo "Copied (Linux): $abs_path"
 }
 
+# Cross-platform clipboard read helper (stdout)
+paste_clip() {
+  case "$_OS_TYPE" in
+    darwin)
+      if command -v pbpaste &>/dev/null; then
+        pbpaste
+        return $?
+      fi
+      ;;
+    wsl|msys)
+      if command -v powershell.exe &>/dev/null; then
+        powershell.exe -NoProfile -Command "Get-Clipboard" 2>/dev/null
+        return $?
+      fi
+      ;;
+    linux)
+      if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste &>/dev/null; then
+        wl-paste --no-newline
+        return $?
+      elif command -v xclip &>/dev/null; then
+        xclip -selection clipboard -o
+        return $?
+      elif command -v xsel &>/dev/null; then
+        xsel --clipboard --output
+        return $?
+      fi
+      ;;
+  esac
+  echo "❌ No supported clipboard read utility found (pbpaste, wl-paste, xclip, xsel, powershell)" >&2
+  return 1
+}
+
+# Save clipboard content to a zencli-managed temp file.
+# Usage:
+#   c2f          — write clipboard to temp file; print path
+#   c2f -c       — write + copy temp file's abs path back to clipboard (like cpwd)
+c2f() {
+  local copy_path=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -c|--copy) copy_path=1; shift ;;
+      -h|--help)
+        echo "Usage: c2f [-c|--copy]"
+        echo "  (no flag)  Save clipboard content to a temp file and print its path."
+        echo "  -c|--copy  Also copy the temp file's absolute path to clipboard."
+        return 0
+        ;;
+      *) echo "❌ Unknown option: $1" >&2; return 1 ;;
+    esac
+  done
+
+  local content
+  if ! content="$(paste_clip 2>/dev/null)"; then
+    echo "❌ Failed to read clipboard." >&2
+    return 1
+  fi
+
+  if [[ -z "$content" ]]; then
+    echo "⚠️  Clipboard is empty — nothing saved." >&2
+    return 1
+  fi
+
+  local tmp_dir
+  tmp_dir="$(_get_zen_tmp_dir)"
+  local tmp_file
+  tmp_file="$(mktemp "${tmp_dir}/cb.XXXXXX")"
+
+  printf '%s' "$content" > "$tmp_file"
+
+  local abs_path
+  abs_path="$(readlink -f "$tmp_file" 2>/dev/null || realpath "$tmp_file" 2>/dev/null || echo "$tmp_file")"
+
+  echo "Saved: $abs_path"
+
+  if [[ "$copy_path" -eq 1 ]]; then
+    printf '%s' "$abs_path" | clip
+    echo "Copied (Linux): $abs_path"
+  fi
+}
+
 # Cross-platform file / URL opener
 open_target() {
   local target="${1:-.}"

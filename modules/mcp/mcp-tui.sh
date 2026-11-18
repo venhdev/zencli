@@ -30,7 +30,12 @@ if [[ -f "$_DOTFILES_ROOT/core/05-tui-lib.sh" ]]; then
   # shellcheck source=../../core/05-tui-lib.sh
   . "$_DOTFILES_ROOT/core/05-tui-lib.sh"
 else
-  echo "Error: core/05-tui-lib.sh not found." >&2
+  echo "❌ Error: core/05-tui-lib.sh not found." >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "❌ Error: 'python3' is required to run the MCP TUI dashboard." >&2
   exit 1
 fi
 
@@ -46,14 +51,10 @@ fi
 declare -a CLIENT_KEYS=("opencode" "agy" "claude" "codex" "cursor")
 declare -a CLIENT_NAMES=("OpenCode" "Antigravity" "Claude Code" "Codex CLI" "Cursor IDE")
 declare -a CLIENT_STATUSES=()
-declare -a CLIENT_SERVERS=()
-declare -a CLIENT_TRANSPORTS=()
-declare -a CLIENT_COMMANDS=()
-declare -a CLIENT_ARGS=()
-declare -a CLIENT_ENVS=()
-declare -a CLIENT_WORKSPACES=()
+declare -a CLIENT_COUNTS=()
+declare -a CLIENT_SUMMARIES=()
 declare -a CLIENT_PATHS=()
-declare -a CLIENT_BIN_EXISTS=()
+declare -a CLIENT_SERVERS_JSON=()
 
 _flash_msg=""
 _flash_color="${_TUI_GREEN:-}"
@@ -68,14 +69,10 @@ _refresh_audit_data() {
   json_raw="$(python3 "$_MGR_PY" check all --json 2>/dev/null || echo "[]")"
   
   CLIENT_STATUSES=()
-  CLIENT_SERVERS=()
-  CLIENT_TRANSPORTS=()
-  CLIENT_COMMANDS=()
-  CLIENT_ARGS=()
-  CLIENT_ENVS=()
-  CLIENT_WORKSPACES=()
+  CLIENT_COUNTS=()
+  CLIENT_SUMMARIES=()
   CLIENT_PATHS=()
-  CLIENT_BIN_EXISTS=()
+  CLIENT_SERVERS_JSON=()
 
   # Parse JSON into bash-friendly unit-separated stream
   local tsv_stream
@@ -88,30 +85,23 @@ try:
     for k in order:
         it = lookup.get(k, {})
         status = it.get("status", "NOT_CONFIGURED") or "NOT_CONFIGURED"
-        server = it.get("server_name", "zenf") or "zenf"
-        trans = it.get("transport", "-") or "-"
-        cmd = it.get("binary_path", "-") or "-"
-        args = " ".join(it.get("args", [])) or "-"
-        env_map = json.dumps(it.get("env", {}))
-        ws = it.get("workspace", "-") or "-"
+        srv_dict = it.get("servers", {})
+        cnt = it.get("total_servers", len(srv_dict))
+        srv_names = ", ".join(srv_dict.keys()) if srv_dict else "-"
         path = it.get("config_path", "-") or "-"
-        bin_ex = "1" if it.get("binary_exists") else "0"
-        print("\x1f".join([status, server, trans, cmd, args, env_map, ws, path, bin_ex]))
+        srv_json = json.dumps(srv_dict)
+        print("\x1f".join([status, str(cnt), srv_names, path, srv_json]))
 except Exception:
     pass
 ' "$json_raw" 2>/dev/null)"
 
   local line idx=0
-  while IFS=$'\x1f' read -r status server trans cmd args env_map ws path bin_ex; do
+  while IFS=$'\x1f' read -r status cnt srv_names path srv_json; do
     CLIENT_STATUSES[idx]="${status:-NOT_CONFIGURED}"
-    CLIENT_SERVERS[idx]="${server:-zenf}"
-    CLIENT_TRANSPORTS[idx]="${trans:--}"
-    CLIENT_COMMANDS[idx]="${cmd:--}"
-    CLIENT_ARGS[idx]="${args:--}"
-    CLIENT_ENVS[idx]="${env_map:-"{}"}"
-    CLIENT_WORKSPACES[idx]="${ws:--}"
+    CLIENT_COUNTS[idx]="${cnt:-0}"
+    CLIENT_SUMMARIES[idx]="${srv_names:--}"
     CLIENT_PATHS[idx]="${path:--}"
-    CLIENT_BIN_EXISTS[idx]="${bin_ex:-0}"
+    CLIENT_SERVERS_JSON[idx]="${srv_json:-"{}"}"
     (( idx++ ))
   done <<< "$tsv_stream"
 }
@@ -129,14 +119,9 @@ _render_detail_box() {
   local name="${CLIENT_NAMES[idx]}"
   local key="${CLIENT_KEYS[idx]}"
   local status="${CLIENT_STATUSES[idx]:-NOT_CONFIGURED}"
-  local server="${CLIENT_SERVERS[idx]:-zenf}"
-  local trans="${CLIENT_TRANSPORTS[idx]:--}"
-  local cmd="${CLIENT_COMMANDS[idx]:-}"
-  local args="${CLIENT_ARGS[idx]:-}"
-  local env_map="${CLIENT_ENVS[idx]:-"{}"}"
-  local ws="${CLIENT_WORKSPACES[idx]:-}"
+  local count="${CLIENT_COUNTS[idx]:-0}"
   local path="${CLIENT_PATHS[idx]:-}"
-  local bin_ex="${CLIENT_BIN_EXISTS[idx]:-0}"
+  local srv_json="${CLIENT_SERVERS_JSON[idx]:-"{}"}"
 
   local width=$(( cols - 4 ))
   (( width > 84 )) && width=84
@@ -159,11 +144,8 @@ _render_detail_box() {
 
   local status_fmt=""
   case "$status" in
-    CONFIGURED)
-      status_fmt="${_TUI_GREEN}✔ ACTIVE & CONFIGURED${_TUI_RESET}"
-      ;;
-    ALREADY_CONFIGURED)
-      status_fmt="${_TUI_GREEN}✔ CONFIGURED${_TUI_RESET}"
+    CONFIGURED|ALREADY_CONFIGURED)
+      status_fmt="${_TUI_GREEN}✔ ACTIVE ($count servers)${_TUI_RESET}"
       ;;
     BINARY_MISSING)
       status_fmt="${_TUI_YELLOW}⚠ CONFIGURED (BINARY MISSING ON DISK)${_TUI_RESET}"
@@ -172,35 +154,96 @@ _render_detail_box() {
       status_fmt="${_TUI_GRAY}○ CONFIG FILE NOT CREATED YET${_TUI_RESET}"
       ;;
     *)
-      status_fmt="${_TUI_RED}✗ NOT CONFIGURED${_TUI_RESET}"
+      status_fmt="${_TUI_RED}✗ NOT CONFIGURED (0 servers)${_TUI_RESET}"
       ;;
   esac
-
-  local disp_cmd="${cmd:-None}"
-  [[ "$disp_cmd" == "-" ]] && disp_cmd="None"
-  local disp_args="${args:-None}"
-  [[ "$disp_args" == "-" ]] && disp_args="None"
-  local disp_ws="${ws:--}"
-  local disp_env="${env_map:-"{}"}"
-  [[ "$disp_env" == "{}" || "$disp_env" == "-" ]] && disp_env="None"
 
   local lines_to_print=(
     "AI Client Identifier : $key ($name)"
     "Configuration File   : $disp_path"
-    "Active MCP Server     : $server"
-    "Transport Mechanism   : $trans"
-    "Workspace Binding    : $disp_ws"
-    "Executable Command   : $disp_cmd"
-    "Command Arguments    : $disp_args"
-    "Environment Injected : $disp_env"
     "Health Status        : $status_fmt"
+    "Active MCP Servers   : $count configured"
   )
 
   for line in "${lines_to_print[@]}"; do
     local trunc_line=""
     _tui_truncate "$line" "$inner_w" trunc_line
-    printf "${_TUI_CYAN}│${_TUI_RESET} %-*s ${_TUI_CYAN}│${_TUI_RESET}\n" "$inner_w" "$trunc_line" >/dev/tty
+    local pad_spaces=$(( inner_w - ${#trunc_line} ))
+    (( pad_spaces < 0 )) && pad_spaces=0
+    local pad_str=""
+    printf -v pad_str "%*s" "$pad_spaces" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
   done
+
+  # Print divider inside box
+  local mid_dashes=""
+  _tui_repeat_char "─" "$(( width - 2 ))" mid_dashes
+  printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$mid_dashes" >/dev/tty
+
+  if (( count == 0 )); then
+    local empty_note="  (No active MCP servers configured. Press [a] to configure a preset.)"
+    local trunc_e=""
+    _tui_truncate "$empty_note" "$inner_w" trunc_e
+    local pad_e=$(( inner_w - ${#trunc_e} ))
+    (( pad_e < 0 )) && pad_e=0
+    local pad_e_str=""
+    printf -v pad_e_str "%*s" "$pad_e" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_GRAY}%s%s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_e" "$pad_e_str" >/dev/tty
+  else
+    local srv_lines
+    srv_lines="$(python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+    items = list(data.items())
+    for i, (name, s) in enumerate(items):
+        is_last = (i == len(items) - 1)
+        prefix = "└─" if is_last else "├─"
+        st = s.get("status", "CONFIGURED")
+        sym = "✔" if st == "CONFIGURED" else "⚠"
+        target = ""
+        if s.get("transport") == "http":
+            target = f"http: {s.get(\"url\", \"\")}"
+        else:
+            cmd = s.get("binary_path", "")
+            args = s.get("args", [])
+            target = cmd
+            if args:
+                target += " " + " ".join(args[:2])
+                if len(args) > 2:
+                    target += "..."
+        print(f"{name}\x1f{prefix}\x1f{sym}\x1f{st}\x1f{target}")
+except Exception:
+    pass
+' "$srv_json" 2>/dev/null)"
+
+    while IFS=$'\x1f' read -r s_name s_prefix s_sym s_st s_target; do
+      [[ -z "$s_name" ]] && continue
+      local badge_colored=""
+      if [[ "$s_st" == "CONFIGURED" ]]; then
+        badge_colored="${_TUI_GREEN}[$s_sym CONFIGURED]${_TUI_RESET}"
+      else
+        badge_colored="${_TUI_YELLOW}[$s_sym MISSING]${_TUI_RESET}"
+      fi
+
+      local left_info="  $s_prefix $s_name : $s_target"
+      local max_left=$(( inner_w - 20 ))
+      (( max_left < 15 )) && max_left=15
+      local trunc_left=""
+      _tui_truncate "$left_info" "$max_left" trunc_left
+      local pad_l=$(( max_left - ${#trunc_left} ))
+      (( pad_l < 0 )) && pad_l=0
+      local pad_l_str=""
+      printf -v pad_l_str "%*s" "$pad_l" ""
+
+      local right_pad=$(( inner_w - max_left - 17 ))
+      (( right_pad < 0 )) && right_pad=0
+      local right_pad_str=""
+      printf -v right_pad_str "%*s" "$right_pad" ""
+
+      printf "${_TUI_CYAN}│${_TUI_RESET} %s%s %b%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_left" "$pad_l_str" "$badge_colored" "$right_pad_str" >/dev/tty
+    done <<< "$srv_lines"
+  fi
 
   local bot_dashes=""
   _tui_repeat_char "─" "$(( width - 2 ))" bot_dashes
@@ -380,17 +423,48 @@ _mcp_tui_remove_server_flow() {
   local client_idx="$1"
   local client_key="${CLIENT_KEYS[client_idx]}"
   local client_name="${CLIENT_NAMES[client_idx]}"
-  local server_name="${CLIENT_SERVERS[client_idx]:-zenf}"
+  local count="${CLIENT_COUNTS[client_idx]:-0}"
+  local srv_json="${CLIENT_SERVERS_JSON[client_idx]:-"{}"}"
   local status="${CLIENT_STATUSES[client_idx]:-NOT_CONFIGURED}"
 
-  if [[ "$status" != "CONFIGURED" && "$status" != "ALREADY_CONFIGURED" && "$status" != "BINARY_MISSING" ]]; then
+  if (( count == 0 )) || [[ "$status" != "CONFIGURED" && "$status" != "ALREADY_CONFIGURED" && "$status" != "BINARY_MISSING" ]]; then
     _set_flash "Notice: No active MCP server to remove for $client_name." "${_TUI_YELLOW}"
     return 0
   fi
 
+  local server_names_raw
+  server_names_raw="$(python3 -c '
+import sys, json
+try:
+    d = json.loads(sys.argv[1])
+    for k in d.keys():
+        print(k)
+except Exception:
+    pass
+' "$srv_json" 2>/dev/null)"
+
+  local server_list=()
+  while IFS= read -r sname; do
+    [[ -n "$sname" ]] && server_list+=("$sname")
+  done <<< "$server_names_raw"
+
+  local target_server=""
+  if (( ${#server_list[@]} == 0 )); then
+    _set_flash "Notice: No server found to remove." "${_TUI_YELLOW}"
+    return 0
+  elif (( ${#server_list[@]} == 1 )); then
+    target_server="${server_list[0]}"
+  else
+    local chosen_srv_idx=0
+    if ! _tui_select_one "SELECT SERVER TO REMOVE" "Client: $client_name ($client_key)" server_list chosen_srv_idx; then
+      return 0
+    fi
+    target_server="${server_list[chosen_srv_idx]}"
+  fi
+
   local confirm_lines=(
     "Client Target : $client_name ($client_key)"
-    "Server Name   : $server_name"
+    "Server Name   : $target_server"
     ""
     "Are you sure you want to remove this MCP server?"
     "A backup (<config>.{yyMMddhhmm}.bak) will be created automatically."
@@ -398,8 +472,8 @@ _mcp_tui_remove_server_flow() {
 
   if _tui_modal_confirm "CONFIRM SERVER REMOVAL" confirm_lines "[Y/Enter] Confirm Removal   [n/Esc/q] Cancel"; then
     local out
-    out="$(python3 "$_MGR_PY" remove "$server_name" -c "$client_key" 2>&1)" || true
-    _set_flash "✔ Removed server '$server_name' from $client_name" "${_TUI_GREEN}"
+    out="$(python3 "$_MGR_PY" remove "$target_server" -c "$client_key" 2>&1)" || true
+    _set_flash "✔ Removed server '$target_server' from $client_name" "${_TUI_GREEN}"
     _refresh_audit_data
   fi
 }
@@ -450,40 +524,54 @@ _mcp_tui_main() {
       local k="${CLIENT_KEYS[i]}"
       local n="${CLIENT_NAMES[i]}"
       local s="${CLIENT_STATUSES[i]:-NOT_CONFIGURED}"
-      local srv="${CLIENT_SERVERS[i]:--}"
-      local ws="${CLIENT_WORKSPACES[i]:-}"
-      local trans="${CLIENT_TRANSPORTS[i]:--}"
+      local cnt="${CLIENT_COUNTS[i]:-0}"
+      local srv_summary="${CLIENT_SUMMARIES[i]:--}"
 
       local badge=""
       case "$s" in
         CONFIGURED|ALREADY_CONFIGURED)
-          badge="${_TUI_GREEN}[✔ CONFIGURED]${_TUI_RESET}"
+          if (( cnt == 1 )); then
+            badge="${_TUI_GREEN}[✔ 1 SERVER]${_TUI_RESET}   "
+          elif (( cnt > 1 )); then
+            badge="${_TUI_GREEN}[✔ $cnt SERVERS]${_TUI_RESET}  "
+          else
+            badge="${_TUI_GREEN}[✔ CONFIGURED]${_TUI_RESET} "
+          fi
           ;;
         BINARY_MISSING)
-          badge="${_TUI_YELLOW}[⚠ BINARY MISSING]${_TUI_RESET}"
+          if (( cnt > 1 )); then
+            badge="${_TUI_YELLOW}[⚠ $cnt SERVERS]${_TUI_RESET}  "
+          else
+            badge="${_TUI_YELLOW}[⚠ 1 SERVER]${_TUI_RESET}   "
+          fi
           ;;
         FILE_MISSING)
-          badge="${_TUI_GRAY}[○ NO FILE]${_TUI_RESET}"
+          badge="${_TUI_GRAY}[○ NO FILE]${_TUI_RESET}    "
           ;;
         *)
-          badge="${_TUI_RED}[✗ NOT SET]${_TUI_RESET}"
+          badge="${_TUI_RED}[✗ NOT SET]${_TUI_RESET}    "
           ;;
       esac
 
       local info=""
-      if [[ "$s" == "CONFIGURED" || "$s" == "ALREADY_CONFIGURED" || "$s" == "BINARY_MISSING" ]]; then
-        info="Server: ${_TUI_BOLD}$srv${_TUI_RESET} ($trans)"
-        [[ -n "$ws" ]] && info="$info [ws: $ws]"
+      if (( cnt > 0 )); then
+        info="Servers: ${_TUI_BOLD}${srv_summary}${_TUI_RESET}"
       else
         info="${_TUI_GRAY}No server active${_TUI_RESET}"
       fi
 
+      # Truncate row info to avoid horizontal overflow
+      local max_info_w=$(( max_w - 42 ))
+      (( max_info_w < 15 )) && max_info_w=15
+      local trunc_info=""
+      _tui_truncate "$info" "$max_info_w" trunc_info
+
       local prefix="   "
       if (( i == cursor )); then
         prefix="${_TUI_CYAN}${_TUI_BOLD} ❯ ${_TUI_RESET}"
-        printf "%b${_TUI_BOLD}[%d] %-14s%b %-26b %b\n" "$prefix" "$((i + 1))" "$n" "${_TUI_RESET}" "$badge" "$info" >/dev/tty
+        printf "%b${_TUI_BOLD}[%d] %-14s%b %b %b\n" "$prefix" "$((i + 1))" "$n" "${_TUI_RESET}" "$badge" "$trunc_info" >/dev/tty
       else
-        printf "%b[%d] %-14s %-26b %b\n" "$prefix" "$((i + 1))" "$n" "$badge" "$info" >/dev/tty
+        printf "%b[%d] %-14s %b %b\n" "$prefix" "$((i + 1))" "$n" "$badge" "$trunc_info" >/dev/tty
       fi
     done
 

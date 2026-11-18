@@ -13,7 +13,20 @@ import os
 import re
 import shutil
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None
+
+
+def require_tomllib():
+    if tomllib is None:
+        print("❌ Error: Python 3.11+ (or package 'tomli') is required to parse Codex TOML configurations.", file=sys.stderr)
+        sys.exit(1)
 
 CLIENT_SPECS = {
     "opencode": {
@@ -189,6 +202,7 @@ def write_json_config(path, data, dry_run=False):
 
 
 def update_toml_server(content, server_name, bin_path, args, env=None, url=None, token=None, remove=False):
+    require_tomllib()
     pattern = rf'(?ms)^\[mcp_servers\.(?:\"{re.escape(server_name)}\"|{re.escape(server_name)})\]\s*.*?(?=(?:^\[|\Z))'
     if remove:
         new_content = re.sub(pattern, "", content).rstrip() + "\n"
@@ -229,7 +243,57 @@ def update_toml_server(content, server_name, bin_path, args, env=None, url=None,
     return new_content
 
 
-def check_client(client, config_override=None, server_name="zenf"):
+def inspect_single_server(client, s_name, s_entry):
+    if not isinstance(s_entry, dict):
+        return None
+
+    info = {
+        "name": s_name,
+        "transport": "stdio",
+        "binary_path": "",
+        "binary_exists": False,
+        "args": [],
+        "env": s_entry.get("env", {}) if isinstance(s_entry.get("env"), dict) else {},
+        "workspace": "",
+        "url": "",
+        "status": "CONFIGURED",
+    }
+
+    if "serverUrl" in s_entry:
+        info["transport"] = "http"
+        info["url"] = s_entry["serverUrl"]
+    elif "url" in s_entry:
+        info["transport"] = "http"
+        info["url"] = s_entry["url"]
+    else:
+        info["transport"] = "stdio"
+        if client == "opencode":
+            cmd = s_entry.get("command", [])
+            if isinstance(cmd, list) and len(cmd) > 0:
+                info["binary_path"] = str(cmd[0])
+                info["args"] = [str(a) for a in cmd[1:]]
+            elif isinstance(cmd, str):
+                info["binary_path"] = cmd
+                info["args"] = [str(a) for a in s_entry.get("args", [])] if isinstance(s_entry.get("args"), list) else []
+        else:
+            info["binary_path"] = str(s_entry.get("command", ""))
+            info["args"] = [str(a) for a in s_entry.get("args", [])] if isinstance(s_entry.get("args"), list) else []
+
+        for i, arg in enumerate(info["args"]):
+            if arg == "--workspace" and i + 1 < len(info["args"]):
+                info["workspace"] = info["args"][i + 1]
+
+        bin_path = info["binary_path"]
+        if bin_path and (os.path.exists(bin_path) or shutil.which(bin_path)):
+            info["binary_exists"] = True
+            info["status"] = "CONFIGURED"
+        else:
+            info["status"] = "BINARY_MISSING"
+
+    return info
+
+
+def check_client(client, config_override=None, server_name=None):
     cfg_path = get_config_path(client, config_override)
     res = {
         "client": client,
@@ -237,7 +301,9 @@ def check_client(client, config_override=None, server_name="zenf"):
         "config_path": cfg_path,
         "file_exists": os.path.exists(cfg_path),
         "configured": False,
-        "server_name": server_name,
+        "server_name": server_name or "-",
+        "servers": {},
+        "total_servers": 0,
         "binary_path": "",
         "binary_exists": False,
         "args": [],
@@ -253,76 +319,74 @@ def check_client(client, config_override=None, server_name="zenf"):
         return res
 
     try:
+        raw_servers = {}
         if CLIENT_SPECS[client]["type"] == "json":
             data = read_json_config(cfg_path)
-            server_entry = None
             if client == "opencode":
                 mcp = data.get("mcp", {})
                 if isinstance(mcp, dict):
                     if "servers" in mcp and isinstance(mcp["servers"], dict):
-                        server_entry = mcp["servers"].get(server_name)
+                        raw_servers = mcp["servers"]
                     else:
-                        server_entry = mcp.get(server_name)
+                        raw_servers = {k: v for k, v in mcp.items() if isinstance(v, dict) and k != "provider"}
             else:
                 servers = data.get("mcpServers", {})
                 if isinstance(servers, dict):
-                    server_entry = servers.get(server_name)
-
-            if server_entry and isinstance(server_entry, dict):
-                res["configured"] = True
-                res["env"] = server_entry.get("env", {})
-                if "serverUrl" in server_entry:
-                    res["transport"] = "http"
-                    res["url"] = server_entry["serverUrl"]
-                elif "url" in server_entry:
-                    res["transport"] = "http"
-                    res["url"] = server_entry["url"]
-                else:
-                    res["transport"] = "stdio"
-                    if client == "opencode":
-                        cmd = server_entry.get("command", [])
-                        if isinstance(cmd, list) and len(cmd) > 0:
-                            res["binary_path"] = cmd[0]
-                            res["args"] = cmd[1:]
-                            for i, arg in enumerate(cmd):
-                                if arg == "--workspace" and i + 1 < len(cmd):
-                                    res["workspace"] = cmd[i + 1]
-                    else:
-                        res["binary_path"] = server_entry.get("command", "")
-                        res["args"] = server_entry.get("args", [])
-                        for i, arg in enumerate(res["args"]):
-                            if arg == "--workspace" and i + 1 < len(res["args"]):
-                                res["workspace"] = res["args"][i + 1]
+                    raw_servers = servers
 
         elif CLIENT_SPECS[client]["type"] == "toml":
+            require_tomllib()
             with open(cfg_path, "rb") as f:
                 data = tomllib.load(f)
             servers = data.get("mcp_servers", {})
-            if isinstance(servers, dict) and server_name in servers:
-                res["configured"] = True
-                s = servers[server_name]
-                res["env"] = s.get("env", {})
-                if "url" in s:
-                    res["transport"] = "http"
-                    res["url"] = s["url"]
-                else:
-                    res["transport"] = "stdio"
-                    res["binary_path"] = s.get("command", "")
-                    res["args"] = s.get("args", [])
-                    for i, arg in enumerate(res["args"]):
-                        if arg == "--workspace" and i + 1 < len(res["args"]):
-                            res["workspace"] = res["args"][i + 1]
+            if isinstance(servers, dict):
+                raw_servers = servers
 
-        if res["configured"]:
-            if res["transport"] == "stdio":
-                bin_path = res["binary_path"]
-                if bin_path and (os.path.exists(bin_path) or shutil.which(bin_path)):
-                    res["binary_exists"] = True
-                    res["status"] = "CONFIGURED"
-                else:
-                    res["status"] = "BINARY_MISSING"
+        # Inspect all servers
+        parsed_servers = {}
+        for s_name, s_val in raw_servers.items():
+            parsed = inspect_single_server(client, s_name, s_val)
+            if parsed:
+                parsed_servers[s_name] = parsed
+
+        res["servers"] = parsed_servers
+        res["total_servers"] = len(parsed_servers)
+
+        if server_name:
+            if server_name in parsed_servers:
+                res["configured"] = True
+                s = parsed_servers[server_name]
+                res["server_name"] = s["name"]
+                res["binary_path"] = s["binary_path"]
+                res["binary_exists"] = s["binary_exists"]
+                res["args"] = s["args"]
+                res["env"] = s["env"]
+                res["workspace"] = s["workspace"]
+                res["transport"] = s["transport"]
+                res["url"] = s["url"]
+                res["status"] = s["status"]
             else:
-                res["status"] = "CONFIGURED"
+                res["configured"] = False
+                res["status"] = "NOT_CONFIGURED"
+        else:
+            if len(parsed_servers) == 0:
+                res["configured"] = False
+                res["status"] = "NOT_CONFIGURED"
+            else:
+                res["configured"] = True
+                has_missing = any(s["status"] == "BINARY_MISSING" for s in parsed_servers.values())
+                res["status"] = "BINARY_MISSING" if has_missing else "CONFIGURED"
+
+                # Mirror primary server for single-server consumers
+                primary_s = parsed_servers.get("zenf") or next(iter(parsed_servers.values()))
+                res["server_name"] = primary_s["name"]
+                res["binary_path"] = primary_s["binary_path"]
+                res["binary_exists"] = primary_s["binary_exists"]
+                res["args"] = primary_s["args"]
+                res["env"] = primary_s["env"]
+                res["workspace"] = primary_s["workspace"]
+                res["transport"] = primary_s["transport"]
+                res["url"] = primary_s["url"]
 
     except Exception as e:
         res["status"] = f"ERROR: {e}"
@@ -495,43 +559,68 @@ def print_status_table(results):
     c_bold = "\033[1m"
     c_reset = "\033[0m"
 
+    term_cols = shutil.get_terminal_size((80, 24)).columns
+    box_w = min(term_cols, 84)
+    if box_w < 50:
+        box_w = 50
+
     print(f"\n{c_bold}{c_cyan}=== ZENCLI MCP CLIENT INTEGRATION AUDIT ==={c_reset}")
     print(f"{c_dim}SSOT Reference: https://github.com/venhdev/zenforge/blob/main/MCP.md{c_reset}\n")
 
-    hdr = f"{'CLIENT':<12} {'STATUS':<18} {'WORKSPACE / URL':<28} {'CONFIG PATH'}"
-    print(f"{c_bold}{hdr}{c_reset}")
-    print("-" * 90)
-
     for r in results:
+        client = r["client"]
         status_raw = r["status"]
-        if status_raw == "CONFIGURED":
-            status_fmt = f"{c_green}✔ CONFIGURED{c_reset}"
-        elif status_raw == "ALREADY_CONFIGURED":
-            status_fmt = f"{c_green}✔ ACTIVE{c_reset}"
-        elif status_raw == "BINARY_MISSING":
-            status_fmt = f"{c_yellow}⚠ BINARY_MISSING{c_reset}"
-        elif status_raw == "FILE_MISSING":
-            status_fmt = f"{c_dim}○ FILE_MISSING{c_reset}"
-        else:
-            status_fmt = f"{c_red}✗ NOT_CONFIGURED{c_reset}"
-
-        target = ""
-        if r.get("transport") == "http":
-            target = f"http: {r.get('url', '')[:20]}..."
-        elif r.get("workspace"):
-            target = f"ws: {r['workspace']}"
-        elif r.get("binary_path"):
-            target = f"cmd: {os.path.basename(r['binary_path'])}"
-        else:
-            target = "-"
+        servers = r.get("servers", {})
+        count = r.get("total_servers", 0)
 
         path_disp = r["config_path"]
         home = os.path.expanduser("~")
         if path_disp.startswith(home):
             path_disp = "~" + path_disp[len(home):]
 
-        print(f"{r['client']:<12} {status_fmt:<28} {target:<28} {path_disp}")
-    print()
+        if status_raw == "FILE_MISSING":
+            badge = f"{c_dim}○ FILE_MISSING{c_reset}"
+            summary = f"{c_dim}(Config file not created yet){c_reset}"
+        elif status_raw == "NOT_CONFIGURED" or count == 0:
+            badge = f"{c_red}✗ NOT_CONFIGURED{c_reset}"
+            summary = f"{c_dim}(No active MCP servers){c_reset}"
+        elif status_raw == "BINARY_MISSING":
+            badge = f"{c_yellow}⚠ {count} SERVER{'S' if count > 1 else ''}{c_reset}"
+            summary = ""
+        else:
+            badge = f"{c_green}✔ {count} SERVER{'S' if count > 1 else ''}{c_reset}"
+            summary = ""
+
+        # Row 1: Client identifier, badge, and config file path
+        print(f" {c_bold}{client:<12}{c_reset} {badge:<28} {c_dim}{path_disp}{c_reset}")
+
+        # Row 2+: Servers or clean summary note
+        if summary:
+            print(f"    {summary}")
+        else:
+            for s_name, s in servers.items():
+                s_status = s.get("status", "CONFIGURED")
+                if s_status == "CONFIGURED":
+                    s_badge = f"{c_green}✔ CONFIGURED{c_reset}"
+                else:
+                    s_badge = f"{c_yellow}⚠ BINARY_MISSING{c_reset}"
+
+                if s.get("transport") == "http":
+                    target_cmd = f"http: {s.get('url', '')}"
+                else:
+                    cmd_str = os.path.basename(s.get("binary_path", ""))
+                    if s.get("args"):
+                        cmd_str += " " + " ".join(s["args"][:3])
+                        if len(s["args"]) > 3:
+                            cmd_str += "..."
+                    target_cmd = cmd_str or "-"
+
+                max_cmd_w = box_w - 38
+                if max_cmd_w > 12 and len(target_cmd) > max_cmd_w:
+                    target_cmd = target_cmd[:max_cmd_w - 3] + "..."
+
+                print(f"    • {c_cyan}{s_name:<12}{c_reset} {target_cmd:<{max_cmd_w}} {s_badge}")
+        print()
 
 
 def parse_env_args(env_list):
@@ -585,7 +674,7 @@ def main():
     check_p = subparsers.add_parser("check", aliases=["status"], help="Audit MCP configuration status for client(s)")
     check_p.add_argument("client", nargs="?", default="all", help="Target client: opencode, agy, claude, codex, cursor, all (default: all)")
     check_p.add_argument("-c", "--config", help="Override client config path")
-    check_p.add_argument("-s", "--server", default="zenf", help="Server entry name (default: zenf)")
+    check_p.add_argument("-s", "--server", default=None, help="Specific server entry name to check (default: check all configured servers)")
     check_p.add_argument("--json", action="store_true", help="Output audit results as JSON")
 
     # setup (backwards compatibility for zenforge)

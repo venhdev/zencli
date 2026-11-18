@@ -223,6 +223,8 @@ _zen_alias_catalog() {
     utils[++n_u] = "zen ski" SEP "npx skills [action]" SEP "Agent skills orchestrator (Vercel Skills CLI)";
     utils[++n_u] = "zen skiv" SEP "zen ski venhdev/zenforge" SEP "Personal skills (auto-targets .agents/skills)";
     utils[++n_u] = "zen skiup" SEP "zen ski update -p -y" SEP "Update all project skills according to lockfile";
+    utils[++n_u] = "zen mcp"   SEP "zen mcp [setup|tui|add|clients|presets]" SEP "Universal AI client MCP orchestrator & TUI dashboard";
+    utils[++n_u] = "zmcp"      SEP "zen mcp"               SEP "Shorthand for zen mcp orchestrator";
     utils[++n_u] = "zen sleep" SEP "sleepin [min]" SEP "Put Windows machine to sleep after countdown (default: 30)";
     utils[++n_u] = "sleepin" SEP "zen sleep [min]" SEP "Put Windows machine to sleep after countdown (default: 30)";
     utils[++n_u] = "winsleep" SEP "sleepin [min]" SEP "Put Windows machine to sleep after countdown (default: 30)";

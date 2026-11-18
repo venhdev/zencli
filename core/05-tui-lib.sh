@@ -341,6 +341,117 @@ _tui_modal_confirm() {
   esac
 }
 
+# Render Modal Text Input Dialog Box (returns 0 on Enter, 1 on Esc/Ctrl+C)
+_tui_modal_input() {
+  local title="$1"
+  local label="$2"
+  local default_val="${3:-}"
+  local is_secret="${4:-0}"
+  local help_hint="${5:-[Enter] Confirm   [Backspace] Edit   [Esc] Cancel}"
+  local out_var="$6"
+
+  # Non-interactive fallback
+  if ! [ -t 0 ] || ! [ -t 1 ] || ! _tui_is_interactive; then
+    printf -v "$out_var" "%s" "$default_val"
+    return 0
+  fi
+
+  local buf="$default_val"
+  local char=""
+
+  _tui_update_dimensions
+  local width=$(( _TUI_COLS - 4 ))
+  (( width > 80 )) && width=80
+  (( width < 40 )) && width=40
+  local inner_width=$(( width - 4 ))
+
+  while true; do
+    _tui_clear
+
+    # 1. Top border
+    local title_part="┌─[ $title ]"
+    local pad_len=$(( width - ${#title_part} - 1 ))
+    (( pad_len < 0 )) && pad_len=0
+    local top_dashes=""
+    _tui_repeat_char "─" "$pad_len" top_dashes
+    printf "${_TUI_CYAN}${_TUI_BOLD}%s%s┐${_TUI_RESET}\n" "$title_part" "$top_dashes" >/dev/tty
+
+    # 2. Blank line
+    local blank_line=""
+    _tui_repeat_char " " "$inner_width" blank_line
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s ${_TUI_CYAN}│${_TUI_RESET}\n" "$blank_line" >/dev/tty
+
+    # 3. Field label
+    local trunc_lbl=""
+    _tui_truncate "$label" "$inner_width" trunc_lbl
+    local pad_lbl=$(( inner_width - ${#trunc_lbl} ))
+    (( pad_lbl < 0 )) && pad_lbl=0
+    local pad_lbl_str=""
+    printf -v pad_lbl_str "%*s" "$pad_lbl" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_BOLD}%s${_TUI_RESET}%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_lbl" "$pad_lbl_str" >/dev/tty
+
+    # 4. Input Box
+    local disp_val="$buf"
+    if (( is_secret )) && [[ -n "$buf" ]]; then
+      printf -v disp_val "%*s" "${#buf}" ""
+      disp_val="${disp_val// /*}"
+    fi
+
+    local input_box_w=$(( inner_width - 6 ))
+    local trunc_disp=""
+    _tui_truncate "$disp_val" "$(( input_box_w - 2 ))" trunc_disp
+    local pad_input=$(( input_box_w - ${#trunc_disp} ))
+    (( pad_input < 0 )) && pad_input=0
+    local pad_input_str=""
+    printf -v pad_input_str "%*s" "$pad_input" ""
+
+    printf "${_TUI_CYAN}│${_TUI_RESET}  ${_TUI_BLUE}[${_TUI_WHITE}${_TUI_BOLD}%s%s${_TUI_RESET}${_TUI_BLUE}]${_TUI_RESET}  ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_disp" "$pad_input_str" >/dev/tty
+
+    # 5. Blank line
+    printf "${_TUI_CYAN}│${_TUI_RESET} %s ${_TUI_CYAN}│${_TUI_RESET}\n" "$blank_line" >/dev/tty
+
+    # 6. Bottom divider & help hint
+    local div_dashes=""
+    _tui_repeat_char "─" "$((width - 2))" div_dashes
+    printf "${_TUI_CYAN}├%s┤${_TUI_RESET}\n" "$div_dashes" >/dev/tty
+
+    local trunc_hint=""
+    _tui_truncate "  $help_hint" "$inner_width" trunc_hint
+    local pad_hint=$(( inner_width - ${#trunc_hint} ))
+    (( pad_hint < 0 )) && pad_hint=0
+    local pad_hint_str=""
+    printf -v pad_hint_str "%*s" "$pad_hint" ""
+    printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_GRAY}%s%s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_hint" "$pad_hint_str" >/dev/tty
+    printf "${_TUI_CYAN}└%s┘${_TUI_RESET}\n" "$div_dashes" >/dev/tty
+
+    # 7. Read character
+    if ! IFS= read -rsn1 char < /dev/tty 2>/dev/null; then
+      return 1
+    fi
+
+    # Handle Escape sequence
+    if [[ "$char" == $'\x1b' ]]; then
+      local seq=""
+      read -rsn2 -t 0.05 seq < /dev/tty 2>/dev/null || seq=""
+      if [[ -z "$seq" ]]; then
+        return 1
+      fi
+      continue
+    elif [[ "$char" == "" || "$char" == $'\r' || "$char" == $'\n' ]]; then
+      printf -v "$out_var" "%s" "$buf"
+      return 0
+    elif [[ "$char" == $'\x7f' || "$char" == $'\x08' ]]; then
+      buf="${buf%?}"
+    elif [[ "$char" == $'\x15' ]]; then
+      buf=""
+    elif [[ "$char" == $'\x03' || "$char" == $'\x04' ]]; then
+      return 1
+    else
+      buf+="$char"
+    fi
+  done
+}
+
 # Prompt user for confirmation with safe temporary cooked terminal
 _tui_confirm_prompt() {
   local prompt_msg="$1"

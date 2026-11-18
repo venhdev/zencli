@@ -325,13 +325,24 @@ zen doctor                  # Audit OS, shell hooks, symlinks, git invariants, a
 zen ali                     # Formatted list of all dotfiles shortcuts & aliases
 zen ali git                 # Search aliases matching keyword 'git'
 
-# 6. Agent Skills Management (Vercel Skills CLI)
+# 6. Agent Skills & MCP Orchestrator
 zen ski [source]            # Add agent skill(s) from GitHub, URL, or local path
 zen skiv [options]          # Personal skills from venhdev/zenforge (auto-targets .agents/skills)
 zen skiup                   # Update project skills according to lockfile (-p -y)
 zen ski update [skills...]  # Update all (or named) installed skills
 zen ski rm <skill...>       # Remove installed skill(s)
 zen ski ls [-g]             # List installed skills (project or global)
+
+zen mcp status              # Audit MCP status for AI clients (opencode, agy, claude, codex, cursor)
+zen mcp tui                 # Launch interactive Native Bash TUI Dashboard (alias: zmcp tui)
+zen mcp clients             # List supported AI clients & canonical config paths (alias: list, ls)
+zen mcp presets             # List built-in 1-click server presets (sqlite, github, fetch, etc.)
+zen mcp add sqlite          # Wire built-in preset to all installed AI clients
+zen mcp add sqlite -s my-db # Wire preset with custom config server key
+zen mcp add custom -- <cmd> # Generic double-dash pass-through to wire arbitrary MCP server
+zen mcp setup <client>      # Wire AI client to local stdio zenf MCP workspace (default: default)
+zen mcp setup --all         # Wire all supported AI clients to zenf MCP
+zen mcp rm <client>         # Remove MCP server configuration from client
 
 # 7. Modular Dotfiles Provisioning
 zen setup [modules...]      # Re-run modular dotfiles installer (replaces insdf)
@@ -498,7 +509,11 @@ dotfiles/
 │   ├── wsl/module.sh                # Windows/WSL interop (clip, explorer, winpath, opene, gete, wcp)
 │   ├── mobile/                      # Flutter, Shorebird, and Android ADB helpers
 │   ├── docker/module.sh             # Docker & Compose shortcuts (dps, dpsa, dcl)
-│   └── ai/module.sh                 # AI agent CLI helpers (Claude, Skills CLI, OpenClaw)
+│   ├── ai/module.sh                 # AI agent CLI helpers (Claude, Skills CLI, OpenClaw)
+│   └── mcp/                         # Universal MCP orchestrator & TUI dashboard
+│       ├── module.sh                # Shell module and alias (zmcp)
+│       ├── mcp-manager.py           # Multi-client JSON/TOML engine
+│       └── mcp-tui.sh               # Pure-Bash interactive dashboard
 ├── scripts/
 │   └── install-tools.sh             # Developer Tools Manager TUI (zen tui)
 ├── enabled.d/                       # Symlinks to active modules (git-ignored)

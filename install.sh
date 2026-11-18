@@ -397,7 +397,7 @@ menu_labels=(
   "wsl       - WSL Integration (clip, explorer, winpath, wcp)"
   "mobile    - Mobile Dev (Flutter, Shorebird, Android ADB tools)"
   "docker    - Docker Shortcuts (dps, dcl cleanup)"
-  "ai        - AI & Agent Tools (Claude, OpenClaw, Skills CLI)"
+  "ai        - AI & Agent Tools (Claude, OpenClaw, Skills CLI, MCP Orchestrator)"
   "gitconfig - Git Aliases & Config (lg, lga, inf, br, co, ...)"
   "tools     - Common CLI Tools (Debian/Ubuntu apt: git, curl, jq, rg)"
 )
@@ -429,7 +429,7 @@ fi
 
 if [[ -L "$DIR/enabled.d/50-ai.sh" ]]; then
   selected[5]=1
-elif command -v claude >/dev/null 2>&1 || [[ -d "$HOME/.openclaw" || -d "$HOME/.claude" ]]; then
+elif command -v claude >/dev/null 2>&1 || command -v opencode >/dev/null 2>&1 || command -v agy >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || [[ -d "$HOME/.openclaw" || -d "$HOME/.claude" ]]; then
   selected[5]=1
 fi
 

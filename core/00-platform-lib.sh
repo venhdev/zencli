@@ -785,6 +785,19 @@ zencli() {
       _zen_cmd_ski update -p -y "$@"
       ;;
 
+    mcp)
+      shift
+      local mcp_mod="$dotfiles_root/modules/mcp/module.sh"
+      if [[ -f "$mcp_mod" ]]; then
+        # shellcheck source=../modules/mcp/module.sh
+        . "$mcp_mod"
+        _zen_cmd_mcp "$@"
+      else
+        echo "Error: MCP module not found at $mcp_mod" >&2
+        return 1
+      fi
+      ;;
+
     --all|-a)
       local installer="$dotfiles_root/scripts/install-tools.sh"
       if [[ -f "$installer" ]]; then
@@ -1559,10 +1572,11 @@ Headless Package Management:
   zencli upgrade <pkg...>  Upgrade or reinstall specific package(s)
   zencli search <query>    Search for packages in repository
 
-Agent Skills Management:
+Agent Skills & MCP:
   zencli ski [source|cmd]  Agent skills orchestrator (add, rm, ls, update, find)
   zencli skiv [options]    Personal skills (venhdev/zenforge, default: .agents/skills)
   zencli skiup             Update project skills according to lockfile (-p -y)
+  zencli mcp [setup|tui|add|clients|presets] Universal AI client MCP orchestrator & TUI dashboard
 
 Ecosystem & Workstation:
   zencli doctor            Audit ecosystem health (OS, symlinks, git, hooks, tools)

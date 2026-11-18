@@ -8,4 +8,6 @@ skills-lock.json
 /enabled.d/
 .installed.json
 *.bak
+__pycache__/
+*.pyc
 

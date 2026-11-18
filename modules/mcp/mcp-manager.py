@@ -176,7 +176,10 @@ def read_json_config(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         return {}
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        content = f.read()
+    if not content.strip():
+        return {}
+    return json.loads(content)
 
 
 def make_backup(path):
@@ -210,28 +213,29 @@ def update_toml_server(content, server_name, bin_path, args, env=None, url=None,
             tomllib.loads(new_content)
         return new_content
 
+    header_key = server_name if re.match(r'^[A-Za-z0-9_-]+$', server_name) else f'"{server_name}"'
     if url:
-        lines = [f"[mcp_servers.{server_name}]", f'url = "{url}"']
+        lines = [f"[mcp_servers.{header_key}]", f"url = {json.dumps(url)}"]
         if token:
-            lines.append(f'bearer_token_env_var = "{token}"')
+            lines.append(f"bearer_token_env_var = {json.dumps(token)}")
         lines.append("")
         section_str = "\n".join(lines)
     else:
-        args_formatted = ", ".join(f'"{a}"' for a in args)
+        args_formatted = ", ".join(json.dumps(str(a)) for a in args)
         lines = [
-            f"[mcp_servers.{server_name}]",
-            f'command = "{bin_path}"',
+            f"[mcp_servers.{header_key}]",
+            f"command = {json.dumps(str(bin_path))}",
             f"args = [{args_formatted}]",
         ]
         if env and isinstance(env, dict) and len(env) > 0:
-            env_items = ", ".join(f'{k} = "{v}"' for k, v in env.items())
+            env_items = ", ".join(f'{k} = {json.dumps(str(v))}' for k, v in env.items())
             lines.append(f"env = {{ {env_items} }}")
         lines.append("")
         lines.append("")
         section_str = "\n".join(lines)
 
     if re.search(pattern, content):
-        new_content = re.sub(pattern, section_str, content)
+        new_content = re.sub(pattern, lambda _: section_str, content)
     else:
         new_content = content.rstrip()
         if new_content:
@@ -533,7 +537,8 @@ def remove_client(client, config_override=None, server_name="zenf", dry_run=Fals
 
         if removed:
             _, backup_path = write_json_config(cfg_path, data, dry_run=dry_run)
-            return {"action": "removed", "client": client, "path": cfg_path, "backup_path": backup_path, "status": "SUCCESS"}
+            act = "dry_run" if dry_run else "removed"
+            return {"action": act, "client": client, "path": cfg_path, "backup_path": backup_path, "status": "SUCCESS"}
         return {"action": "not_configured", "client": client, "path": cfg_path, "status": "NOT_CONFIGURED"}
 
     elif CLIENT_SPECS[client]["type"] == "toml":
@@ -546,7 +551,8 @@ def remove_client(client, config_override=None, server_name="zenf", dry_run=Fals
                 backup_path = make_backup(cfg_path)
                 with open(cfg_path, "w", encoding="utf-8") as f:
                     f.write(new_toml)
-            return {"action": "removed", "client": client, "path": cfg_path, "backup_path": backup_path, "status": "SUCCESS"}
+            act = "dry_run" if dry_run else "removed"
+            return {"action": act, "client": client, "path": cfg_path, "backup_path": backup_path, "status": "SUCCESS"}
         return {"action": "not_configured", "client": client, "path": cfg_path, "status": "NOT_CONFIGURED"}
 
 
@@ -578,7 +584,10 @@ def print_status_table(results):
         if path_disp.startswith(home):
             path_disp = "~" + path_disp[len(home):]
 
-        if status_raw == "FILE_MISSING":
+        if status_raw.startswith("ERROR:"):
+            badge = f"{c_red}✗ ERROR{c_reset}"
+            summary = f"{c_red}{status_raw}{c_reset}"
+        elif status_raw == "FILE_MISSING":
             badge = f"{c_dim}○ FILE_MISSING{c_reset}"
             summary = f"{c_dim}(Config file not created yet){c_reset}"
         elif status_raw == "NOT_CONFIGURED" or count == 0:
@@ -706,11 +715,12 @@ def main():
     add_p.add_argument("--url", help="Configure for remote Streamable HTTP transport")
     add_p.add_argument("-f", "--force", action="store_true", help="Force overwrite existing entry")
     add_p.add_argument("-n", "--dry-run", action="store_true", help="Preview configuration changes without writing")
+    add_p.add_argument("-a", "--all", action="store_true", help="Apply to all supported clients")
 
     # remove
     rm_p = subparsers.add_parser("remove", aliases=["rm"], help="Remove MCP server entry from client configuration")
     rm_p.add_argument("target", help="Server name (e.g. zenf, sqlite) or client name (e.g. codex, claude)")
-    rm_p.add_argument("-c", "--client", default="all", help="Target client(s), comma-separated or 'all'")
+    rm_p.add_argument("-c", "--client", default=None, help="Target client(s), comma-separated or 'all'")
     rm_p.add_argument("--config", help="Override client config path")
     rm_p.add_argument("-s", "--server", "--server-name", dest="server", help="Server entry name to remove (default: zenf or target)")
     rm_p.add_argument("-n", "--dry-run", action="store_true", help="Preview removal without modifying files")
@@ -759,8 +769,8 @@ def main():
         env_map = parse_env_args(getattr(args, "env", None))
         is_add = (cmd == "add")
         target = args.target if is_add else "zenforge"
-        client_arg = getattr(args, "client", "all")
-        if not is_add and getattr(args, "all", False):
+        client_arg = getattr(args, "client", "all") or "all"
+        if getattr(args, "all", False):
             client_arg = "all"
         target_clients = resolve_clients(client_arg)
 
@@ -824,24 +834,35 @@ def main():
         return
 
     if cmd in ("remove", "rm"):
-        target = args.target.strip().lower()
-        if target in CLIENT_SPECS:
-            target_clients = [target]
-            server_to_rm = args.server or "zenf"
-        elif target == "all":
+        target = args.target.strip()
+        client_arg = getattr(args, "client", None)
+        all_flag = getattr(args, "all", False)
+
+        if all_flag:
             target_clients = ALL_CLIENTS
-            server_to_rm = args.server or "zenf"
+            server_to_rm = args.server or target
+        elif client_arg is not None:
+            # Explicit -c/--client provided: target is the server name
+            target_clients = ALL_CLIENTS if client_arg == "all" else resolve_clients(client_arg)
+            server_to_rm = args.server or target
         else:
-            server_to_rm = args.server or args.target
-            client_arg = getattr(args, "client", "all")
-            if getattr(args, "all", False):
-                client_arg = "all"
-            target_clients = resolve_clients(client_arg)
+            # -c was not specified; check if positional target refers to client name
+            if target.lower() in CLIENT_SPECS:
+                target_clients = [target.lower()]
+                server_to_rm = args.server or "zenf"
+            elif target.lower() == "all":
+                target_clients = ALL_CLIENTS
+                server_to_rm = args.server or "zenf"
+            else:
+                target_clients = ALL_CLIENTS
+                server_to_rm = args.server or target
 
         for c in target_clients:
             cfg_override = getattr(args, "config", None) if len(target_clients) == 1 else None
             res = remove_client(c, config_override=cfg_override, server_name=server_to_rm, dry_run=getattr(args, "dry_run", False))
-            if res["action"] == "removed":
+            if res["action"] == "dry_run":
+                print(f"[DRY-RUN] Would remove '{server_to_rm}' from {c} in {res['path']}")
+            elif res["action"] == "removed":
                 print(f"[SUCCESS] Removed '{server_to_rm}' from {c} in {res['path']}")
                 if res.get("backup_path"):
                     print(f"         Backup: {res['backup_path']}")

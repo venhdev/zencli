@@ -72,7 +72,8 @@ _refresh_audit_data() {
   CLIENT_COUNTS=()
   CLIENT_SUMMARIES=()
   CLIENT_PATHS=()
-  CLIENT_SERVERS_JSON=()
+  CLIENT_SERVER_NAMES=()
+  CLIENT_TREE_DATA=()
 
   # Parse JSON into bash-friendly unit-separated stream
   local tsv_stream
@@ -88,20 +89,41 @@ try:
         srv_dict = it.get("servers", {})
         cnt = it.get("total_servers", len(srv_dict))
         srv_names = ", ".join(srv_dict.keys()) if srv_dict else "-"
+        srv_keys_csv = ",".join(srv_dict.keys())
         path = it.get("config_path", "-") or "-"
-        srv_json = json.dumps(srv_dict)
-        print("\x1f".join([status, str(cnt), srv_names, path, srv_json]))
+
+        items = list(srv_dict.items())
+        tree_rows = []
+        for i, (name, s) in enumerate(items):
+            is_last = (i == len(items) - 1)
+            prefix = "└─" if is_last else "├─"
+            st = s.get("status", "CONFIGURED")
+            sym = "✔" if st == "CONFIGURED" else "⚠"
+            if s.get("transport") == "http":
+                target = f"http: {s.get(\"url\", \"\")}"
+            else:
+                cmd = s.get("binary_path", "")
+                args = s.get("args", [])
+                target = cmd
+                if args:
+                    target += " " + " ".join(args[:2])
+                    if len(args) > 2:
+                        target += "..."
+            tree_rows.append(f"{prefix}\x1e{name}\x1e{target}\x1e{st}\x1e{sym}")
+        tree_encoded = "\x1d".join(tree_rows)
+        print("\x1f".join([status, str(cnt), srv_names, path, srv_keys_csv, tree_encoded]))
 except Exception:
     pass
 ' "$json_raw" 2>/dev/null)"
 
-  local line idx=0
-  while IFS=$'\x1f' read -r status cnt srv_names path srv_json; do
+  local idx=0
+  while IFS=$'\x1f' read -r status cnt srv_names path srv_keys_csv tree_encoded; do
     CLIENT_STATUSES[idx]="${status:-NOT_CONFIGURED}"
     CLIENT_COUNTS[idx]="${cnt:-0}"
     CLIENT_SUMMARIES[idx]="${srv_names:--}"
     CLIENT_PATHS[idx]="${path:--}"
-    CLIENT_SERVERS_JSON[idx]="${srv_json:-"{}"}"
+    CLIENT_SERVER_NAMES[idx]="${srv_keys_csv:-}"
+    CLIENT_TREE_DATA[idx]="${tree_encoded:-}"
     (( idx++ ))
   done <<< "$tsv_stream"
 }
@@ -121,10 +143,10 @@ _render_detail_box() {
   local status="${CLIENT_STATUSES[idx]:-NOT_CONFIGURED}"
   local count="${CLIENT_COUNTS[idx]:-0}"
   local path="${CLIENT_PATHS[idx]:-}"
-  local srv_json="${CLIENT_SERVERS_JSON[idx]:-"{}"}"
+  local tree_data="${CLIENT_TREE_DATA[idx]:-}"
 
   local width=$(( cols - 4 ))
-  (( width > 84 )) && width=84
+  (( width > 80 )) && width=80
   (( width < 40 )) && return 0
   local inner_w=$(( width - 4 ))
 
@@ -142,38 +164,71 @@ _render_detail_box() {
     disp_path="~${disp_path#"$home"}"
   fi
 
-  local status_fmt=""
+  local status_label=""
+  local status_color=""
   case "$status" in
     CONFIGURED|ALREADY_CONFIGURED)
-      status_fmt="${_TUI_GREEN}✔ ACTIVE ($count servers)${_TUI_RESET}"
+      status_label="ACTIVE ($count servers)"
+      status_color="${_TUI_GREEN}"
       ;;
     BINARY_MISSING)
-      status_fmt="${_TUI_YELLOW}⚠ CONFIGURED (BINARY MISSING ON DISK)${_TUI_RESET}"
+      status_label="CONFIGURED (BINARY MISSING ON DISK)"
+      status_color="${_TUI_YELLOW}"
       ;;
     FILE_MISSING)
-      status_fmt="${_TUI_GRAY}○ CONFIG FILE NOT CREATED YET${_TUI_RESET}"
+      status_label="CONFIG FILE NOT CREATED YET"
+      status_color="${_TUI_GRAY}"
+      ;;
+    ERROR*)
+      status_label="$status"
+      status_color="${_TUI_RED}"
       ;;
     *)
-      status_fmt="${_TUI_RED}✗ NOT CONFIGURED (0 servers)${_TUI_RESET}"
+      status_label="NOT CONFIGURED (0 servers)"
+      status_color="${_TUI_RED}"
       ;;
   esac
 
-  local lines_to_print=(
-    "AI Client Identifier : $key ($name)"
-    "Configuration File   : $disp_path"
-    "Health Status        : $status_fmt"
-    "Active MCP Servers   : $count configured"
-  )
+  # Line 1: AI Client Identifier
+  local l1="AI Client Identifier : $key ($name)"
+  local trunc1=""
+  _tui_truncate "$l1" "$inner_w" trunc1
+  local p1=$(( inner_w - ${#trunc1} ))
+  (( p1 < 0 )) && p1=0
+  local p1_str=""
+  printf -v p1_str "%*s" "$p1" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc1" "$p1_str" >/dev/tty
 
-  for line in "${lines_to_print[@]}"; do
-    local trunc_line=""
-    _tui_truncate "$line" "$inner_w" trunc_line
-    local pad_spaces=$(( inner_w - ${#trunc_line} ))
-    (( pad_spaces < 0 )) && pad_spaces=0
-    local pad_str=""
-    printf -v pad_str "%*s" "$pad_spaces" ""
-    printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_line" "$pad_str" >/dev/tty
-  done
+  # Line 2: Configuration File
+  local l2="Configuration File   : $disp_path"
+  local trunc2=""
+  _tui_truncate "$l2" "$inner_w" trunc2
+  local p2=$(( inner_w - ${#trunc2} ))
+  (( p2 < 0 )) && p2=0
+  local p2_str=""
+  printf -v p2_str "%*s" "$p2" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc2" "$p2_str" >/dev/tty
+
+  # Line 3: Health Status (without ANSI corruption in width math)
+  local max_stat_w=$(( inner_w - 23 ))
+  (( max_stat_w < 5 )) && max_stat_w=5
+  local trunc_stat=""
+  _tui_truncate "$status_label" "$max_stat_w" trunc_stat
+  local p3=$(( inner_w - 23 - ${#trunc_stat} ))
+  (( p3 < 0 )) && p3=0
+  local p3_str=""
+  printf -v p3_str "%*s" "$p3" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} Health Status        : %b%s%b%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$status_color" "$trunc_stat" "${_TUI_RESET}" "$p3_str" >/dev/tty
+
+  # Line 4: Active MCP Servers
+  local l4="Active MCP Servers   : $count configured"
+  local trunc4=""
+  _tui_truncate "$l4" "$inner_w" trunc4
+  local p4=$(( inner_w - ${#trunc4} ))
+  (( p4 < 0 )) && p4=0
+  local p4_str=""
+  printf -v p4_str "%*s" "$p4" ""
+  printf "${_TUI_CYAN}│${_TUI_RESET} %s%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc4" "$p4_str" >/dev/tty
 
   # Print divider inside box
   local mid_dashes=""
@@ -190,59 +245,39 @@ _render_detail_box() {
     printf -v pad_e_str "%*s" "$pad_e" ""
     printf "${_TUI_CYAN}│${_TUI_RESET} ${_TUI_GRAY}%s%s${_TUI_RESET} ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_e" "$pad_e_str" >/dev/tty
   else
-    local srv_lines
-    srv_lines="$(python3 -c '
-import json, sys
-try:
-    data = json.loads(sys.argv[1])
-    items = list(data.items())
-    for i, (name, s) in enumerate(items):
-        is_last = (i == len(items) - 1)
-        prefix = "└─" if is_last else "├─"
-        st = s.get("status", "CONFIGURED")
-        sym = "✔" if st == "CONFIGURED" else "⚠"
-        target = ""
-        if s.get("transport") == "http":
-            target = f"http: {s.get(\"url\", \"\")}"
-        else:
-            cmd = s.get("binary_path", "")
-            args = s.get("args", [])
-            target = cmd
-            if args:
-                target += " " + " ".join(args[:2])
-                if len(args) > 2:
-                    target += "..."
-        print(f"{name}\x1f{prefix}\x1f{sym}\x1f{st}\x1f{target}")
-except Exception:
-    pass
-' "$srv_json" 2>/dev/null)"
+    # Pure-Bash iteration over pre-formatted tree lines (zero subshell fork!)
+    local saved_ifs="$IFS"
+    IFS=$'\x1d'
+    local rows=()
+    read -rd '' -a rows <<< "$tree_data" || true
+    IFS="$saved_ifs"
 
-    while IFS=$'\x1f' read -r s_name s_prefix s_sym s_st s_target; do
-      [[ -z "$s_name" ]] && continue
+    for row in "${rows[@]}"; do
+      [[ -z "$row" ]] && continue
+      local s_prefix="" s_name="" s_target="" s_st="" s_sym=""
+      IFS=$'\x1e' read -r s_prefix s_name s_target s_st s_sym <<< "$row"
+      IFS="$saved_ifs"
+
       local badge_colored=""
       if [[ "$s_st" == "CONFIGURED" ]]; then
-        badge_colored="${_TUI_GREEN}[$s_sym CONFIGURED]${_TUI_RESET}"
+        badge_colored="${_TUI_GREEN}[$s_sym CONFIGURED]${_TUI_RESET}  "
       else
-        badge_colored="${_TUI_YELLOW}[$s_sym MISSING]${_TUI_RESET}"
+        badge_colored="${_TUI_YELLOW}[$s_sym MISSING]${_TUI_RESET}     "
       fi
 
       local left_info="  $s_prefix $s_name : $s_target"
-      local max_left=$(( inner_w - 20 ))
+      local max_left=$(( inner_w - 18 ))
       (( max_left < 15 )) && max_left=15
       local trunc_left=""
       _tui_truncate "$left_info" "$max_left" trunc_left
-      local pad_l=$(( max_left - ${#trunc_left} ))
-      (( pad_l < 0 )) && pad_l=0
-      local pad_l_str=""
-      printf -v pad_l_str "%*s" "$pad_l" ""
 
-      local right_pad=$(( inner_w - max_left - 17 ))
-      (( right_pad < 0 )) && right_pad=0
-      local right_pad_str=""
-      printf -v right_pad_str "%*s" "$right_pad" ""
+      local pad_spaces=$(( inner_w - ${#trunc_left} - 16 ))
+      (( pad_spaces < 1 )) && pad_spaces=1
+      local pad_str=""
+      printf -v pad_str "%*s" "$pad_spaces" ""
 
-      printf "${_TUI_CYAN}│${_TUI_RESET} %s%s %b%s ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_left" "$pad_l_str" "$badge_colored" "$right_pad_str" >/dev/tty
-    done <<< "$srv_lines"
+      printf "${_TUI_CYAN}│${_TUI_RESET} %s%s%b ${_TUI_CYAN}│${_TUI_RESET}\n" "$trunc_left" "$pad_str" "$badge_colored" >/dev/tty
+    done
   fi
 
   local bot_dashes=""
@@ -265,9 +300,10 @@ _mcp_tui_add_preset_flow() {
   )
 
   local chosen_preset_idx=0
-  if ! _tui_select_one "SELECT MCP PRESET TO CONFIGURE" "Target Client: $client_name ($client_key)" preset_choices chosen_preset_idx; then
+  if ! _tui_select_one "SELECT MCP PRESET TO CONFIGURE" "Target Client: $client_name ($client_key)" chosen_preset_idx "${preset_choices[@]}"; then
     return 0
   fi
+  (( ! _TUI_IS_ACTIVE )) && _tui_enter
 
   local preset_id=""
   case "$chosen_preset_idx" in
@@ -424,7 +460,7 @@ _mcp_tui_remove_server_flow() {
   local client_key="${CLIENT_KEYS[client_idx]}"
   local client_name="${CLIENT_NAMES[client_idx]}"
   local count="${CLIENT_COUNTS[client_idx]:-0}"
-  local srv_json="${CLIENT_SERVERS_JSON[client_idx]:-"{}"}"
+  local srv_csv="${CLIENT_SERVER_NAMES[client_idx]:-}"
   local status="${CLIENT_STATUSES[client_idx]:-NOT_CONFIGURED}"
 
   if (( count == 0 )) || [[ "$status" != "CONFIGURED" && "$status" != "ALREADY_CONFIGURED" && "$status" != "BINARY_MISSING" ]]; then
@@ -432,21 +468,11 @@ _mcp_tui_remove_server_flow() {
     return 0
   fi
 
-  local server_names_raw
-  server_names_raw="$(python3 -c '
-import sys, json
-try:
-    d = json.loads(sys.argv[1])
-    for k in d.keys():
-        print(k)
-except Exception:
-    pass
-' "$srv_json" 2>/dev/null)"
-
   local server_list=()
-  while IFS= read -r sname; do
-    [[ -n "$sname" ]] && server_list+=("$sname")
-  done <<< "$server_names_raw"
+  local saved_ifs="$IFS"
+  IFS=','
+  read -ra server_list <<< "$srv_csv"
+  IFS="$saved_ifs"
 
   local target_server=""
   if (( ${#server_list[@]} == 0 )); then
@@ -456,10 +482,11 @@ except Exception:
     target_server="${server_list[0]}"
   else
     local chosen_srv_idx=0
-    if ! _tui_select_one "SELECT SERVER TO REMOVE" "Client: $client_name ($client_key)" server_list chosen_srv_idx; then
+    if ! _tui_select_one "SELECT SERVER TO REMOVE" "Client: $client_name ($client_key)" chosen_srv_idx "${server_list[@]}"; then
       return 0
     fi
     target_server="${server_list[chosen_srv_idx]}"
+    (( ! _TUI_IS_ACTIVE )) && _tui_enter
   fi
 
   local confirm_lines=(
@@ -500,13 +527,12 @@ _mcp_tui_toggle_zenforge() {
 # ==============================================================================
 _mcp_tui_main() {
   _tui_enter
-  trap '_tui_exit' EXIT INT TERM
-
   _refresh_audit_data
   local cursor=0
   local total=${#CLIENT_KEYS[@]}
 
   while true; do
+    (( ! _TUI_IS_ACTIVE )) && _tui_enter
     _tui_clear
     _tui_update_dimensions
     local max_w="${_TUI_COLS:-80}"
@@ -555,13 +581,13 @@ _mcp_tui_main() {
 
       local info=""
       if (( cnt > 0 )); then
-        info="Servers: ${_TUI_BOLD}${srv_summary}${_TUI_RESET}"
+        info="Servers: $srv_summary"
       else
-        info="${_TUI_GRAY}No server active${_TUI_RESET}"
+        info="No server active"
       fi
 
-      # Truncate row info to avoid horizontal overflow
-      local max_info_w=$(( max_w - 42 ))
+      # Truncate clean unstyled row info to avoid horizontal overflow
+      local max_info_w=$(( max_w - 44 ))
       (( max_info_w < 15 )) && max_info_w=15
       local trunc_info=""
       _tui_truncate "$info" "$max_info_w" trunc_info
@@ -569,9 +595,9 @@ _mcp_tui_main() {
       local prefix="   "
       if (( i == cursor )); then
         prefix="${_TUI_CYAN}${_TUI_BOLD} ❯ ${_TUI_RESET}"
-        printf "%b${_TUI_BOLD}[%d] %-14s%b %b %b\n" "$prefix" "$((i + 1))" "$n" "${_TUI_RESET}" "$badge" "$trunc_info" >/dev/tty
+        printf "%b${_TUI_BOLD}[%d] %-14s%b %b ${_TUI_BOLD}%s${_TUI_RESET}\n" "$prefix" "$((i + 1))" "$n" "${_TUI_RESET}" "$badge" "$trunc_info" >/dev/tty
       else
-        printf "%b[%d] %-14s %b %b\n" "$prefix" "$((i + 1))" "$n" "$badge" "$trunc_info" >/dev/tty
+        printf "%b[%d] %-14s %b %s${_TUI_RESET}\n" "$prefix" "$((i + 1))" "$n" "$badge" "$trunc_info" >/dev/tty
       fi
     done
 
@@ -594,8 +620,9 @@ _mcp_tui_main() {
       DOWN)
         (( cursor = (cursor + 1) % total ))
         ;;
-      1|2|3|4|5)
-        local jump_idx=$(( action - 1 ))
+      1|2|3|4|5|CHAR:[1-5])
+        local digit="${action#CHAR:}"
+        local jump_idx=$(( digit - 1 ))
         if (( jump_idx >= 0 && jump_idx < total )); then
           cursor=$jump_idx
         fi
@@ -603,17 +630,20 @@ _mcp_tui_main() {
       SPACE)
         _mcp_tui_toggle_zenforge "$cursor"
         ;;
-      a|A)
+      a|A|CHAR:a|CHAR:A)
         _mcp_tui_add_preset_flow "$cursor"
         ;;
-      d|D)
+      d|D|CHAR:d|CHAR:D)
         _mcp_tui_remove_server_flow "$cursor"
         ;;
-      r|R)
+      r|R|CHAR:r|CHAR:R)
         _refresh_audit_data
         _set_flash "✔ Refreshed live MCP integration audit." "${_TUI_GREEN}"
         ;;
-      q|Q|ESC)
+      REDRAW)
+        continue
+        ;;
+      QUIT|ESC|q|Q)
         _tui_exit
         return 0
         ;;

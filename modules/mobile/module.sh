@@ -550,7 +550,37 @@ _flutter_pick_log_file() {
   esac
 }
 
+# Helper to ensure current directory is a Flutter project root
+_require_pubspec() {
+  if [[ ! -f pubspec.yaml ]]; then
+    echo "❌ No pubspec.yaml found in: $PWD" >&2
+    return 1
+  fi
+}
+
 flr() {
+  local use_shorebird=0
+  local pass_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --sb|-s|--shorebird)
+        use_shorebird=1
+        shift
+        ;;
+      *)
+        pass_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if ((use_shorebird)); then
+    _flsb_run "${pass_args[@]}"
+    return
+  fi
+
+  _require_pubspec || return 1
+
   local device args=() cmd log_file
 
   device=$(_flutter_pick_device) ||
@@ -560,7 +590,7 @@ flr() {
 
   log_file=$(_flutter_pick_log_file "flutter-run") || return
 
-  cmd=($(_flutter_runner) run -d "$device" "${args[@]}")
+  cmd=($(_flutter_runner) run -d "$device" "${args[@]}" "${pass_args[@]}")
   if [[ -n "$log_file" ]]; then
     local cmd_str
     cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
@@ -571,6 +601,8 @@ flr() {
 }
 
 flb() {
+  _require_pubspec || return 1
+
   local platform="${1:-}" target args=() cmd log_file
   local current flutter_ver
 
@@ -617,18 +649,15 @@ flb() {
 # --- Shorebird helpers ---
 
 _shorebird_preflight() {
+  _require_pubspec || return 1
+
   command -v shorebird &>/dev/null || {
     echo "❌ shorebird not found" >&2
     return 1
   }
 
   [[ -f shorebird.yaml ]] || {
-    echo "❌ shorebird.yaml not found (run: shorebird init)" >&2
-    return 1
-  }
-
-  [[ -f pubspec.yaml ]] || {
-    echo "❌ pubspec.yaml not found (run at project root)" >&2
+    echo "❌ No shorebird.yaml found in: $PWD (run: shorebird init)" >&2
     return 1
   }
 }
@@ -643,7 +672,7 @@ _shorebird_version() {
       print
       exit
     }
-  ' pubspec.yaml
+  ' pubspec.yaml 2>/dev/null
 }
 
 _shorebird_pick_artifact() {
@@ -848,6 +877,28 @@ _flsb_patch() {
   fi
 }
 
+_flsb_run() {
+  _shorebird_preflight || return 1
+
+  local device args=() cmd log_file
+
+  device=$(_flutter_pick_device) ||
+    { echo "❌ No device"; return 1; }
+
+  _flutter_args args || return
+
+  log_file=$(_flutter_pick_log_file "shorebird-run") || return
+
+  cmd=(shorebird run -d "$device" "${args[@]}" "$@")
+  if [[ -n "$log_file" ]]; then
+    local cmd_str
+    cmd_str="$(_format_cmdline "${cmd[@]}") 2>&1 | tee \"$log_file\""
+    _run_confirm eval "$cmd_str"
+  else
+    _run_confirm "${cmd[@]}"
+  fi
+}
+
 _flsb_help() {
   cat <<'EOF'
 flsb - Flutter Shorebird helper
@@ -856,6 +907,7 @@ Usage:
   flsb <command> [options]
 
 Commands:
+  run                         Run app via Shorebird engine (shorebird run)
   release, r [-n|--dry-run]   Release Android app via Shorebird & FVM
   patch, p   [-n|--dry-run]   Patch Android app via Shorebird
   preview                     Preview releases/patches (shorebird preview)
@@ -867,15 +919,19 @@ Options:
   -n, --dry-run               Run build without uploading/submitting
 
 Shortcuts:
+  flsbr                       Shortcut for 'flsb run' (or 'flr --sb')
   sbr                         Shortcut for 'flsb release'
   sbp                         Shortcut for 'flsb patch'
-  sb                          Shortcut for 'flsb'
 EOF
 }
 
 flsb() {
   local subcmd="${1:-}"
   case "$subcmd" in
+    run)
+      shift
+      _flsb_run "$@"
+      ;;
     release|r)
       shift
       _flsb_release "$@"
@@ -910,8 +966,23 @@ flsb() {
   esac
 }
 
+flsbr() { flsb run "$@"; }
 sbr() { flsb release "$@"; }
 sbp() { flsb patch "$@"; }
+
+# --- Canonical Flutter shortcuts ---
+fl() { $(_flutter_runner) "$@"; }
+fld() { $(_flutter_runner) doctor "$@"; }
+
+flpub() {
+  _require_pubspec || return 1
+  _run_confirm $(_flutter_runner) pub get "$@"
+}
+
+flclean() {
+  _require_pubspec || return 1
+  _run_confirm $(_flutter_runner) clean "$@"
+}
 
 if [[ -n "${BASH_VERSION:-}" ]] && command -v complete &>/dev/null; then
   _flsb_completions() {
@@ -919,10 +990,10 @@ if [[ -n "${BASH_VERSION:-}" ]] && command -v complete &>/dev/null; then
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-      COMPREPLY=($(compgen -W "release patch preview doctor help" -- "$cur"))
+      COMPREPLY=($(compgen -W "run release patch preview doctor help" -- "$cur"))
     elif [[ "$prev" == "release" || "$prev" == "patch" || "$prev" == "r" || "$prev" == "p" ]]; then
       COMPREPLY=($(compgen -W "-n --dry-run" -- "$cur"))
     fi
   }
-  complete -F _flsb_completions flsb 2>/dev/null || true
+  complete -F _flsb_completions flsb flsbr 2>/dev/null || true
 fi

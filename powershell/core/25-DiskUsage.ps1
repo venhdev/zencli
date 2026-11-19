@@ -25,9 +25,33 @@ function dirsize {
         return
     }
 
+    $calcTotal = {
+        param($path)
+        $raw = robocopy $path NULL /L /S /NFL /NDL /NJH /NC /NP /BYTES /XJ /R:0 /W:0 2>$null
+        $b = 0L
+        $t = $raw -join "`n"
+        if ($t -match 'Bytes\s*:\s*(\d+)') {
+            $b = [int64]$Matches[1]
+        }
+        $h = switch ($b) {
+            { $_ -ge 1GB } { "{0:N2} GB" -f ($_ / 1GB); break }
+            { $_ -ge 1MB } { "{0:N2} MB" -f ($_ / 1MB); break }
+            { $_ -ge 1KB } { "{0:N2} KB" -f ($_ / 1KB); break }
+            default        { "$_ B" }
+        }
+        [PSCustomObject]@{
+            Folder     = "TOTAL ($path)"
+            Size       = $h
+            GB         = [math]::Round($b / 1GB, 3)
+            TotalBytes = $b
+        }
+    }
+
     $subDirs = @(Get-ChildItem -LiteralPath $targetDir -Directory -Force -ErrorAction SilentlyContinue)
     if ($subDirs.Count -eq 0) {
         Write-Host "No subdirectories found in '$targetDir'." -ForegroundColor Yellow
+        $tot = & $calcTotal $targetDir
+        Write-Host "TOTAL: $($tot.Size) ('$targetDir')" -ForegroundColor Cyan
         return
     }
 
@@ -81,12 +105,13 @@ function dirsize {
         }
     }
 
-    $sorted = $results | Sort-Object TotalBytes -Descending
+    $sorted = @($results | Sort-Object TotalBytes -Descending)
     if ($Top -gt 0) {
-        $sorted = $sorted | Select-Object -First $Top
+        $sorted = @($sorted | Select-Object -First $Top)
     }
 
-    $sorted
+    $tot = & $calcTotal $targetDir
+    $sorted + $tot
 }
 
 Set-Alias -Name dus -Value dirsize -ErrorAction SilentlyContinue

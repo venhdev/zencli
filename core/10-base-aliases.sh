@@ -143,13 +143,20 @@ dirsize() {
     cmd="du -k --max-depth=1 \"$target\" 2>/dev/null"
   fi
 
-  local raw_output
-  raw_output="$(eval "$cmd" | grep -v -E "[[:space:]]+(\./?|${clean_target})$" | sort -nr)"
+  local du_output
+  du_output="$(eval "$cmd")"
 
-  if [[ -z "$raw_output" ]]; then
-    echo "No subdirectories found in '$target'."
-    return 0
+  local total_line
+  total_line="$(printf "%s\n" "$du_output" | grep -E "[[:space:]]+(\./?|${clean_target}/?)$" | tail -n 1)"
+  if [[ -z "$total_line" ]]; then
+    total_line="$(printf "%s\n" "$du_output" | tail -n 1)"
   fi
+  local total_kb
+  total_kb="$(awk '{print $1}' <<< "$total_line")"
+  [[ "$total_kb" =~ ^[0-9]+$ ]] || total_kb=0
+
+  local raw_output
+  raw_output="$(printf "%s\n" "$du_output" | grep -v -E "[[:space:]]+(\./?|${clean_target}/?)$" | sort -nr)"
 
   local awk_script='
   function human(k) {
@@ -167,12 +174,33 @@ dirsize() {
     sub(/^[[:space:]]+/, "");
     printf "%-12s %s\n", human(kb), $0;
   }
+  END {
+    if (total_kb != "") {
+      printf "%-12s %s\n", "----", "---------";
+      printf "%-12s %s\n", human(total_kb), "TOTAL (" target ")";
+    }
+  }
   '
 
+  if [[ -z "$raw_output" ]]; then
+    local total_human
+    total_human="$(awk -v k="$total_kb" '
+    function human(k) {
+      if (k >= 1048576) return sprintf("%.2f GB", k / 1048576);
+      if (k >= 1024) return sprintf("%.2f MB", k / 1024);
+      return sprintf("%d KB", k);
+    }
+    BEGIN { print human(k); }
+    ')"
+    echo "No subdirectories found in '$target'."
+    echo "TOTAL: $total_human ('$target')"
+    return 0
+  fi
+
   if [[ -n "$limit" ]]; then
-    printf "%s\n" "$raw_output" | head -n "$limit" | awk "$awk_script"
+    printf "%s\n" "$raw_output" | head -n "$limit" | awk -v total_kb="$total_kb" -v target="$target" "$awk_script"
   else
-    printf "%s\n" "$raw_output" | awk "$awk_script"
+    printf "%s\n" "$raw_output" | awk -v total_kb="$total_kb" -v target="$target" "$awk_script"
   fi
 }
 alias dus='dirsize' # Human-readable directory disk usage sorted by size

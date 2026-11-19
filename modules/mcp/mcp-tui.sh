@@ -100,7 +100,7 @@ try:
             st = s.get("status", "CONFIGURED")
             sym = "✔" if st == "CONFIGURED" else "⚠"
             if s.get("transport") == "http":
-                target = f"http: {s.get(\"url\", \"\")}"
+                target = "http: " + str(s.get("url", ""))
             else:
                 cmd = s.get("binary_path", "")
                 args = s.get("args", [])
@@ -296,7 +296,7 @@ _mcp_tui_add_preset_flow() {
     "fetch      - Web content fetcher MCP (PyPI: mcp-server-fetch via uvx)"
     "filesystem - Local filesystem MCP (npm: @modelcontextprotocol/server-filesystem via npx)"
     "postgres   - PostgreSQL database MCP (npm: @modelcontextprotocol/server-postgres via npx)"
-    "zenforge   - ZenForge tracking plane & state machine (native: zenf)"
+    "zenforge   - ZenForge tracking plane & state machine (remote: https://zenforge-mcp.memozen.app/mcp)"
   )
 
   local chosen_preset_idx=0
@@ -424,19 +424,29 @@ _mcp_tui_add_preset_flow() {
       ;;
 
     zenforge)
-      if ! _tui_modal_input "STEP 1/2: ZENFORGE WORKSPACE" "Workspace name for ZenForge tracking plane:" "default" 0 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_param; then
+      local default_url="https://zenforge-mcp.memozen.app/mcp"
+      local val_url="" val_token=""
+      if ! _tui_modal_input "STEP 1/3: ZENFORGE MCP URL" "Remote Streamable HTTP endpoint URL:" "$default_url" 0 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_url; then
         _set_flash "Configuration wizard cancelled." "${_TUI_YELLOW}"
         return 0
       fi
-      if ! _tui_modal_input "STEP 2/2: CONFIG SERVER KEY" "Identifier name in AI client config:" "zenf" 0 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_server; then
+      if ! _tui_modal_input "STEP 2/3: BEARER AUTH TOKEN" "Enter Bearer token (secret/masked):" "" 1 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_token; then
         _set_flash "Configuration wizard cancelled." "${_TUI_YELLOW}"
         return 0
       fi
-      cmd_args=("--workspace" "$val_param" "-s" "${val_server:-zenf}")
+      if ! _tui_modal_input "STEP 3/3: CONFIG SERVER KEY" "Identifier name in AI client config:" "zenf" 0 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_server; then
+        _set_flash "Configuration wizard cancelled." "${_TUI_YELLOW}"
+        return 0
+      fi
+      cmd_args=("--url" "${val_url:-$default_url}" "-s" "${val_server:-zenf}")
+      [[ -n "$val_token" ]] && cmd_args+=("--token" "$val_token")
+      local auth_disp="None"
+      [[ -n "$val_token" ]] && auth_disp="Bearer (configured)"
       review_lines=(
         "Client Target  : $client_name ($client_key)"
-        "Preset Package : native: zenf"
-        "Workspace Name : $val_param"
+        "Preset Package : remote: ZenForge MCP"
+        "Endpoint URL   : ${val_url:-$default_url}"
+        "Authentication : $auth_disp"
         "Server Key     : ${val_server:-zenf}"
         ""
         "A backup (<config>.{yyMMddhhmm}.bak) will be created automatically."
@@ -516,10 +526,39 @@ _mcp_tui_toggle_zenforge() {
     return 0
   fi
 
-  local out
-  out="$(python3 "$_MGR_PY" add zenforge -c "$client_key" 2>&1)" || true
-  _set_flash "✔ Configured ZenForge for $client_name" "${_TUI_GREEN}"
-  _refresh_audit_data
+  local default_url="https://zenforge-mcp.memozen.app/mcp"
+  local val_url="" val_token=""
+  if ! _tui_modal_input "STEP 1/2: ZENFORGE MCP URL" "Remote Streamable HTTP endpoint URL:" "$default_url" 0 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_url; then
+    _set_flash "Configuration wizard cancelled." "${_TUI_YELLOW}"
+    return 0
+  fi
+  if ! _tui_modal_input "STEP 2/2: BEARER AUTH TOKEN" "Enter Bearer token (secret/masked):" "" 1 "[Enter] Confirm   [Backspace] Edit   [Esc] Cancel" val_token; then
+    _set_flash "Configuration wizard cancelled." "${_TUI_YELLOW}"
+    return 0
+  fi
+
+  local cmd_args=("--url" "${val_url:-$default_url}" "-s" "zenf")
+  [[ -n "$val_token" ]] && cmd_args+=("--token" "$val_token")
+  local auth_disp="None"
+  [[ -n "$val_token" ]] && auth_disp="Bearer (configured)"
+  local review_lines=(
+    "Client Target  : $client_name ($client_key)"
+    "Preset Package : remote: ZenForge MCP"
+    "Endpoint URL   : ${val_url:-$default_url}"
+    "Authentication : $auth_disp"
+    "Server Key     : zenf"
+    ""
+    "A backup (<config>.{yyMMddhhmm}.bak) will be created automatically."
+  )
+
+  if _tui_modal_confirm "REVIEW & APPLY ZENFORGE CONFIG" review_lines "[Y/Enter] Install & Apply Configuration   [n/Esc/q] Cancel"; then
+    local out
+    out="$(python3 "$_MGR_PY" add zenforge -c "$client_key" "${cmd_args[@]}" 2>&1)" || true
+    _set_flash "✔ Configured ZenForge for $client_name" "${_TUI_GREEN}"
+    _refresh_audit_data
+  else
+    _set_flash "Configuration aborted." "${_TUI_YELLOW}"
+  fi
 }
 
 # ==============================================================================
@@ -605,7 +644,7 @@ _mcp_tui_main() {
     _render_detail_box "$cursor"
 
     # Render Command Footer
-    _tui_draw_footer "[1-5] Jump  [↑/↓] Move  [Space] Config ZenForge  [a] Add Preset  [d] Delete  [r] Refresh  [q] Quit"
+    _tui_draw_footer "[1-5] Jump  [↑/↓] Move  [Space] ZenForge  [a] Add  [d] Delete  [r] Refresh  [q] Quit"
 
     # Wait for User Key Event
     local action=""

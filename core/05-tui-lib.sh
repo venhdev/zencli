@@ -225,8 +225,10 @@ _tui_draw_footer() {
   _tui_repeat_char "─" "$width" divider
 
   printf "\n${_TUI_GRAY}%s${_TUI_RESET}\n" "$divider" >/dev/tty
-  if [[ -n "$help_text" && ${#help_text} -le width ]]; then
-    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "$help_text" >/dev/tty
+  if [[ -n "$help_text" ]]; then
+    local trunc_help=""
+    _tui_truncate "$help_text" "$width" trunc_help
+    printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "$trunc_help" >/dev/tty
   elif (( width >= 72 )); then
     printf "${_TUI_GRAY}%s${_TUI_RESET}\n" "[↑/↓] Move  [Space] Select  [i] Install  [u] Update  [d] Remove  [?] Help  [q] Quit" >/dev/tty
   elif (( width >= 54 )); then

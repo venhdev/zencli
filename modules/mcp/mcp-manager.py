@@ -91,16 +91,20 @@ def resolve_binary(override=None):
     return "zenf"
 
 
+DEFAULT_ZENFORGE_URL = "https://zenforge-mcp.memozen.app/mcp"
+
 PRESET_CATALOG = {
     "zenforge": {
         "name": "ZenForge",
         "description": "ZenForge MCP tracking plane & task state machine",
-        "package": "native: zenf",
+        "package": f"remote: {DEFAULT_ZENFORGE_URL}",
         "default_server_name": "zenf",
         "builder": lambda **kw: {
+            "url": kw.get("url") if kw.get("url") is not None else (None if kw.get("local") else DEFAULT_ZENFORGE_URL),
             "command": resolve_binary(kw.get("binary")),
             "args": ["mcp", "stdio", "--workspace", kw.get("workspace") or "default"],
             "env": kw.get("env") or {},
+            "token": kw.get("token"),
         },
     },
     "sqlite": {
@@ -217,7 +221,11 @@ def update_toml_server(content, server_name, bin_path, args, env=None, url=None,
     if url:
         lines = [f"[mcp_servers.{header_key}]", f"url = {json.dumps(url)}"]
         if token:
-            lines.append(f"bearer_token_env_var = {json.dumps(token)}")
+            if re.match(r'^[A-Z0-9_]+$', token) and not token.startswith("Bearer"):
+                lines.append(f"bearer_token_env_var = {json.dumps(token)}")
+            else:
+                bearer_val = token if token.startswith("Bearer ") else f"Bearer {token}"
+                lines.append(f'http_headers = {{ "Authorization" = {json.dumps(bearer_val)} }}')
         lines.append("")
         section_str = "\n".join(lines)
     else:
@@ -435,13 +443,14 @@ def setup_client(client, config_override=None, server_name="zenf", command=None,
                 target_map = mcp
 
             if url:
+                bearer_val = token if (token and token.startswith("Bearer ")) else (f"Bearer {token}" if token else "")
                 entry = {
                     "type": "remote",
                     "url": url,
-                    "oauth": False,
+                    "enabled": True,
                 }
-                if token:
-                    entry["headers"] = {"Authorization": f"Bearer {token}"}
+                if bearer_val:
+                    entry["headers"] = {"Authorization": bearer_val}
                 target_map[server_name] = entry
             else:
                 entry = {
@@ -455,13 +464,37 @@ def setup_client(client, config_override=None, server_name="zenf", command=None,
         else:
             servers = data.setdefault("mcpServers", {})
             if url:
-                entry = {
-                    "serverUrl": url,
-                    "disabled": False,
-                }
-                if token:
-                    entry["headers"] = {"Authorization": f"Bearer {token}"}
-                servers[server_name] = entry
+                bearer_val = token if (token and token.startswith("Bearer ")) else (f"Bearer {token}" if token else "")
+                if client == "claude":
+                    entry = {
+                        "type": "http",
+                        "url": url,
+                    }
+                    if bearer_val:
+                        entry["headers"] = {"Authorization": bearer_val}
+                    servers[server_name] = entry
+                elif client == "cursor":
+                    entry = {
+                        "url": url,
+                    }
+                    if bearer_val:
+                        entry["headers"] = {"Authorization": bearer_val}
+                    servers[server_name] = entry
+                elif client == "agy":
+                    entry = {
+                        "serverUrl": url,
+                        "disabled": False,
+                    }
+                    if bearer_val:
+                        entry["headers"] = {"Authorization": bearer_val}
+                    servers[server_name] = entry
+                else:
+                    entry = {
+                        "url": url,
+                    }
+                    if bearer_val:
+                        entry["headers"] = {"Authorization": bearer_val}
+                    servers[server_name] = entry
             else:
                 entry = {
                     "command": bin_path,
@@ -504,6 +537,7 @@ def setup_client(client, config_override=None, server_name="zenf", command=None,
         "client": client,
         "path": cfg_path,
         "binary": bin_path,
+        "url": url or "",
         "server": server_name,
         "workspace": workspace or "",
         "backup_path": backup_path,
@@ -695,6 +729,7 @@ def main():
     setup_p.add_argument("-c", "--config", help="Override client config path")
     setup_p.add_argument("--url", help="Configure for remote Streamable HTTP transport")
     setup_p.add_argument("--token", help="Bearer token for remote HTTP transport")
+    setup_p.add_argument("--local", action="store_true", help="Force local stdio mode with zenf binary instead of remote URL")
     setup_p.add_argument("-f", "--force", action="store_true", help="Force overwrite existing entry")
     setup_p.add_argument("-n", "--dry-run", action="store_true", help="Preview configuration changes without writing")
     setup_p.add_argument("-a", "--all", action="store_true", help="Apply to all supported clients")
@@ -713,6 +748,7 @@ def main():
     add_p.add_argument("--conn", help="Connection string (for postgres preset)")
     add_p.add_argument("--env", action="append", help="Environment variables KEY=VALUE (repeatable)")
     add_p.add_argument("--url", help="Configure for remote Streamable HTTP transport")
+    add_p.add_argument("--local", action="store_true", help="Force local stdio mode with zenf binary instead of remote URL")
     add_p.add_argument("-f", "--force", action="store_true", help="Force overwrite existing entry")
     add_p.add_argument("-n", "--dry-run", action="store_true", help="Preview configuration changes without writing")
     add_p.add_argument("-a", "--all", action="store_true", help="Apply to all supported clients")
@@ -774,8 +810,32 @@ def main():
             client_arg = "all"
         target_clients = resolve_clients(client_arg)
 
-        # Resolve server definition: either Generic (trailing_cmd) or Preset
-        if trailing_cmd:
+        server_url = getattr(args, "url", None)
+        server_token = getattr(args, "token", None)
+
+        if target in ("zenforge", "zenf"):
+            is_local = getattr(args, "local", False) or bool(getattr(args, "binary", None))
+            server_name = getattr(args, "server", None) or "zenf"
+            if is_local:
+                server_url = None
+                server_token = None
+                server_cmd = resolve_binary(getattr(args, "binary", None))
+                server_args = ["mcp", "stdio", "--workspace", getattr(args, "workspace", None) or "default"]
+            else:
+                server_url = server_url or DEFAULT_ZENFORGE_URL
+                if not server_token:
+                    server_token = os.environ.get("ZENFORGE_TOKEN") or os.environ.get("ZENF_TOKEN")
+                if not server_token and sys.stdin.isatty():
+                    try:
+                        import getpass
+                        print(f"🌐 ZenForge MCP Remote Endpoint: {server_url}")
+                        server_token = getpass.getpass("🔑 Enter ZenForge Bearer Token (press Enter to skip): ").strip() or None
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nAborted.", file=sys.stderr)
+                        sys.exit(130)
+                server_cmd = ""
+                server_args = []
+        elif trailing_cmd:
             server_name = getattr(args, "server", None) or target
             server_cmd = trailing_cmd[0]
             server_args = trailing_cmd[1:]
@@ -794,12 +854,6 @@ def main():
             server_cmd = built["command"]
             server_args = built["args"]
             env_map = built["env"]
-        elif target == "zenf":
-            preset = PRESET_CATALOG["zenforge"]
-            server_name = getattr(args, "server", None) or "zenf"
-            built = preset["builder"](workspace=getattr(args, "workspace", None), binary=getattr(args, "binary", None), env=env_map)
-            server_cmd = built["command"]
-            server_args = built["args"]
         else:
             print(f"❌ Error: '{target}' is not a recognized preset and no command was specified after '--'.", file=sys.stderr)
             print("💡 Usage: zmcp add <name> [flags] -- <command> [args...]", file=sys.stderr)
@@ -816,8 +870,8 @@ def main():
                 args=server_args,
                 env=env_map,
                 workspace=getattr(args, "workspace", None),
-                url=getattr(args, "url", None),
-                token=getattr(args, "token", None),
+                url=server_url,
+                token=server_token,
                 force=getattr(args, "force", False),
                 dry_run=getattr(args, "dry_run", False),
             )
@@ -829,7 +883,11 @@ def main():
                 print(f"[SUCCESS] Configured {c} with '{server_name}' in {res['path']}")
                 if res.get("backup_path"):
                     print(f"         Backup: {res['backup_path']}")
-                if not getattr(args, "url", None):
+                if res.get("url"):
+                    print(f"         Endpoint: {res['url']}")
+                    if server_token:
+                        print("         Auth: Bearer (configured)")
+                else:
                     print(f"         Command: {res['binary']}")
         return
 
